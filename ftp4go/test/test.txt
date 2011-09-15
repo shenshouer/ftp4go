@@ -1,0 +1,4 @@
+This is a weird character (unicode)
+"日"
+This is a new line
+This is the last line
