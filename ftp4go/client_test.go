@@ -146,20 +146,18 @@ func TestConnection(t *testing.T) {
 			return
 		}
 
-		resp, err = ftpClient.Cwd(test_f)
+		//resp, err = ftpClient.Cwd(test_f)
 		defer ftpClient.Cwd(homefolder) //back to home at the end
-
-		if err != nil {
-			//t.Fatalf("error: ", err.String())
-			return
-		}
 
 		if err == nil {
 			t.Logf("Removing directory tree %s before/after testing.", test_f)
-			ftpClient.Cwd(homefolder) // back
+			
 			if err := ftpClient.RemoveRemoteDirTree(test_f); err != nil {
-				//t.Fatalf("Error:", err.String())
+				if err != DIRECTORY_NON_EXISTENT{
+					t.Fatalf("Error:", err.String())
+				}
 			}
+			
 		}
 	}
 

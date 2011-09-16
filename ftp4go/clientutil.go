@@ -9,6 +9,8 @@ import (
 	"fmt"
 )
 
+var DIRECTORY_NON_EXISTENT = os.NewError("The folder does not exist and can not be removed")
+
 // RemoveRemoteDirTree removes a remote folder and all of its subfolders recursively.
 // The current directory is then set to the orginal one before the operation or to the root of the deleted folder if it fails.
 func (ftp *FTP) RemoveRemoteDirTree(remoteDir string) (err os.Error) {
@@ -29,7 +31,7 @@ func (ftp *FTP) removeRemoteDirTree(remoteDir string) (err os.Error) {
 	ftp.writeInfo("Changing working remote dir to:", remoteDir)
 
 	if _, err = ftp.Cwd(remoteDir); err != nil {
-		return err
+		return DIRECTORY_NON_EXISTENT
 	}
 
 	ftp.writeInfo("Cleaning up remote folder:", remoteDir)
