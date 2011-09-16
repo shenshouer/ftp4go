@@ -121,6 +121,18 @@ func TestConnection(t *testing.T) {
 	cwd, err = ftpClient.Pwd()
 	t.Log("The current folder is", cwd)
 
+	cwd, err = ftpClient.Pwd()
+	t.Log("Testings Mlsd")
+	ls, err := ftpClient.Mlsd(".", []string{"type", "size"})
+	if err != nil {
+		t.Errorf("The ftp command MLSD does not work or is not supported, error: %s", err.String())
+	} else {
+
+		for _, l := range ls {
+			t.Logf("\nMlsd entry: %s, facts: %v", l.Name, l.Facts)
+		}
+	}
+
 	t.Log("Cleaning up before testing")
 
 	test_f := "test"

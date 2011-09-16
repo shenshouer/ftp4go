@@ -52,6 +52,7 @@ const (
 	PWDIR_FTP_CMD      FtpCmd = 22
 	CDUP_FTP_CMD       FtpCmd = 23
 	QUIT_FTP_CMD       FtpCmd = 24
+	MLSD_FTP_CMD       FtpCmd = 25
 )
 
 const MSG_OOB = 0x1 //Process data out of band
@@ -67,6 +68,7 @@ var ftpCmdStrings = map[FtpCmd]string{
 	TYPE_A_FTP_CMD:     "TYPE A",
 	NLST_FTP_CMD:       "NLST",
 	LIST_FTP_CMD:       "LIST",
+	MLSD_FTP_CMD:       "MLSD",
 	FEAT_FTP_CMD:       "FEAT",
 	OPTS_FTP_CMD:       "OPTS",
 	RETR_FTP_CMD:       "RETR",
@@ -120,10 +122,20 @@ func (i FtpCmd) String() string {
 }
 
 func (i FtpCmd) AppendParameters(pars ...string) string {
-	allPars := make([]string, 1, len(pars)+1)
+	allPars := make([]string, len(pars)+1)
 	allPars[0] = i.String()
-	allPars = append(allPars, pars...)
-	return strings.Join(allPars, " ")
+	var k int = 1
+	for _, par := range pars {
+		p := strings.TrimSpace(par)
+		//fmt.Printf("The par value in AppendParameters is; %s\n", p)
+		if len(p) > 0 {
+			allPars[k] = p
+			k++
+		}
+	}
+	//allPars = append(allPars, pars...)
+	//	fmt.Printf("\nThe value of allPars in AppendParameters is; %s", strings.Join(allPars[:k], " "))
+	return strings.Join(allPars[:k], " ")
 }
 
 // The FTP client structure containing:
@@ -285,6 +297,49 @@ func (ftp *FTP) makePasv() (host string, port int, err os.Error) {
 // Acct sends an ACCT command.
 func (ftp *FTP) Acct() (response *Response, err os.Error) {
 	return ftp.SendAndReadEmpty(ACCT_FTP_CMD)
+}
+
+type NameFactsLine struct {
+	Name  string
+	Facts map[string]string
+}
+
+// Mlsd lists a directory in a standardized format by using MLSD
+// command (RFC-3659). If path is omitted the current directory
+// is assumed. "facts" is a list of strings representing the type
+// of information desired (e.g. ["type", "size", "perm"]).
+// Return a generator object yielding a tuple of two elements
+// for every file found in path.
+// First element is the file name, the second one is a dictionary
+// including a variable number of "facts" depending on the server
+// and whether "facts" argument has been provided.
+func (ftp *FTP) Mlsd(path string, facts []string) (ls []*NameFactsLine, err os.Error) {
+
+	if len(facts) > 0 {
+		if _, err = ftp.Opts("MLST", strings.Join(facts, ";")+";"); err != nil {
+			return nil, err
+		}
+	}
+
+	sw := &stringSliceWriter{make([]string, 0, 50)}
+	if err = ftp.GetLines(MLSD_FTP_CMD, sw, path); err != nil {
+		return nil, err
+	}
+
+	ls = make([]*NameFactsLine, len(sw.s))
+	for _, l := range sw.s {
+		tkns := strings.Split(strings.TrimSpace(l), " ")
+		name := tkns[0]
+		facts := strings.Split(tkns[1], ";")
+		ftp.writeInfo("Found facts:", facts)
+		vals := make(map[string]string, len(facts)-1)
+		for i := 0; i < len(facts)-1; i++ {
+			fpair := strings.Split(facts[i], "=")
+			vals[fpair[0]] = fpair[1]
+		}
+		ls = append(ls, &NameFactsLine{strings.ToLower(name), vals})
+	}
+	return
 }
 
 // Nlst returns a list of file in a directory, by default the current.
