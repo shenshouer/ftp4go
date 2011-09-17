@@ -9,7 +9,21 @@ import (
 	"time"
 )
 
-const HOMEFOLDER = "/PublicFolder"
+type connPars struct {
+	ftpAddress string
+	ftpPort    int
+	username   string
+	password   string
+	homefolder string
+	debugFtp   bool
+}
+
+var allpars = []*connPars{
+	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: false},
+	&connPars{ftpAddress: "ftp.fileserve.com", ftpPort: 21, username: "ftp4go", password: "52fe56bc", homefolder: "/", debugFtp: false},
+}
+
+var pars = allpars[0]
 
 func askParameter(question string, defaultValue string) (inputValue string, err os.Error) {
 	fmt.Print(question)
@@ -34,73 +48,25 @@ func askParameter(question string, defaultValue string) (inputValue string, err 
 	return inputValue, err
 }
 
-func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan bool) {
-	stats = make(chan *CallbackInfo, 100)
-	quit = make(chan bool)
-	fileUploaded = make(chan bool, 100)
+func NewFtpConn(t *testing.T) (ftpClient *FTP, err os.Error) {
 
-	files := make(map[string][2]int64, 100)
-
-	go func() {
-		for {
-			select {
-			case st := <-stats:
-				// do not wait here, the buffered request channel is the barrier
-
-				go func() {
-					pair, ok := files[st.Resourcename]
-					var pos, size int64
-					if !ok {
-						fi, _ := os.Stat(st.Filename)
-
-						files[st.Resourcename] = [2]int64{fi.Size, pos}
-						size = fi.Size
-					} else {
-						pos = pair[1] // position correctly for writing
-						size = pair[0]
-					}
-
-					mo := int((float32(st.BytesTransmitted)/float32(size))*100) / 10
-					msg := fmt.Sprintf("File: %s - received: %d percent\n", st.Resourcename, mo*10)
-					if st.Eof {
-						fmt.Println("Uploaded (reached EOF) file:", st.Resourcename)
-						fileUploaded <- true // done here
-					} else {
-						fmt.Print(msg)
-					}
-					/*
-						if size <= st.BytesTransmitted {	
-							fileUploaded <- true // done here
-						}
-					*/
-				}()
-			case <-quit:
-				fmt.Println("Stopping workers")
-				return // get out
-			}
-		}
-	}()
-	return
-}
-
-func NewFtpConn(logl int, t *testing.T) (ftpClient *FTP, err os.Error) {
-	ftpAddress := "ftp.drivehq.com"
-	ftpPort := 21
-	username := "goftptest"
-	password := "g0ftpt3st"
+	var logl int
+	if pars.debugFtp {
+		logl = 1
+	}
 
 	ftpClient = NewFTP(logl) // 1 for debugging
 
 	ftpClient.SetPassive(true)
 
 	// connect
-	_, err = ftpClient.Connect(ftpAddress, ftpPort)
+	_, err = ftpClient.Connect(pars.ftpAddress, pars.ftpPort)
 	if err != nil {
 		t.Fatalf("The FTP connection could not be established, error: ", err.String())
 	}
 
-	t.Logf("Connecting with username: %s and password %s", username, password)
-	_, err = ftpClient.Login(username, password, "")
+	t.Logf("Connecting with username: %s and password %s", pars.username, pars.password)
+	_, err = ftpClient.Login(pars.username, pars.password, "")
 	if err != nil {
 		t.Fatalf("The user could not be logged in, error: %s", err.String())
 	}
@@ -111,20 +77,21 @@ func NewFtpConn(logl int, t *testing.T) (ftpClient *FTP, err os.Error) {
 
 func TestFeatures(t *testing.T) {
 
-	ftpClient, err := NewFtpConn(0, t)
+	ftpClient, err := NewFtpConn(t)
 	defer ftpClient.Quit()
 
 	if err != nil {
 		return
 	}
 
-	homefolder := HOMEFOLDER
+	homefolder := pars.homefolder
+	fmt.Println("The home folder is:", homefolder)
 
-	var resp *Response
+	//var resp *Response
 	var cwd string
-	resp, err = ftpClient.Cwd(homefolder) // home
+	_, err = ftpClient.Cwd(homefolder) // home
 	if err != nil {
-		t.Fatalf("error: ", err.String(), ", response:", resp.Message)
+		t.Fatalf("error: ", err)
 	}
 
 	cwd, err = ftpClient.Pwd()
@@ -136,7 +103,8 @@ func TestFeatures(t *testing.T) {
 		t.Logf("The ftp command MLSD does not work or is not supported, error: %s", err.String())
 	} else {
 		for _, l := range ls {
-			t.Logf("\nMlsd entry: %s, facts: %v", l.Name, l.Facts)
+			//t.Logf("\nMlsd entry: %s, facts: %v", l.Name, l.Facts)
+			t.Logf("\nMlsd entry and facts: %v", l)
 		}
 	}
 
@@ -191,7 +159,7 @@ func TestFeatures(t *testing.T) {
 
 func TestRecursion(t *testing.T) {
 
-	ftpClient, err := NewFtpConn(0, t)
+	ftpClient, err := NewFtpConn(t)
 	defer ftpClient.Quit()
 
 	if err != nil {
@@ -199,10 +167,10 @@ func TestRecursion(t *testing.T) {
 	}
 
 	test_f := "test"
-	noiterations := 2
+	noiterations := 1
 
 	maxSimultaneousConns := 1
-	homefolder := HOMEFOLDER
+	homefolder := pars.homefolder
 
 	t.Log("Cleaning up before testing")
 
@@ -232,12 +200,11 @@ func TestRecursion(t *testing.T) {
 			t.Fatalf("Error uploading folder tree %s, error:\n", test_f, err)
 		}
 
+		t.Logf("Uploaded %d files.\n", n)
 		// wait for all stats to finish
 		for k := 0; k < n; k++ {
 			<-fileUploaded
 		}
-
-		t.Logf("Uploaded %d files.\n", n)
 
 		check("test")
 		check("test/subdir")
@@ -315,5 +282,54 @@ func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *test
 		}
 	}
 
+	return
+}
+
+func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan bool) {
+	stats = make(chan *CallbackInfo, 100)
+	quit = make(chan bool)
+	fileUploaded = make(chan bool, 100)
+
+	files := make(map[string][2]int64, 100)
+
+	go func() {
+		for {
+			select {
+			case st := <-stats:
+				// do not wait here, the buffered request channel is the barrier
+
+				go func() {
+					pair, ok := files[st.Resourcename]
+					var pos, size int64
+					if !ok {
+						fi, _ := os.Stat(st.Filename)
+
+						files[st.Resourcename] = [2]int64{fi.Size, pos}
+						size = fi.Size
+					} else {
+						pos = pair[1] // position correctly for writing
+						size = pair[0]
+					}
+
+					mo := int((float32(st.BytesTransmitted)/float32(size))*100) / 10
+					msg := fmt.Sprintf("File: %s - received: %d percent\n", st.Resourcename, mo*10)
+					if st.Eof {
+						fmt.Println("Uploaded (reached EOF) file:", st.Resourcename)
+						fileUploaded <- true // done here
+					} else {
+						fmt.Print(msg)
+					}
+					/*
+						if size <= st.BytesTransmitted {	
+							fileUploaded <- true // done here
+						}
+					*/
+				}()
+			case <-quit:
+				fmt.Println("Stopping workers")
+				return // get out
+			}
+		}
+	}()
 	return
 }
