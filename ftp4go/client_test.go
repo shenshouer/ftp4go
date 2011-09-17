@@ -60,14 +60,16 @@ func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan b
 					mo := int((float32(st.BytesTransmitted)/float32(size))*100) / 10
 					msg := fmt.Sprintf("File: %s - received: %d percent\n", st.Resourcename, mo*10)
 					if st.Eof {
-						fmt.Println("REACHED EOF, file:", st.Resourcename)
+						fmt.Println("Uploaded (reached EOF) file:", st.Resourcename)
+						fileUploaded <- true // done here
 					} else {
 						fmt.Print(msg)
 					}
-
-					if size <= st.BytesTransmitted {
-						fileUploaded <- true // done here
-					}
+					/*
+						if size <= st.BytesTransmitted {	
+							fileUploaded <- true // done here
+						}
+					*/
 				}()
 			case <-quit:
 				fmt.Println("Stopping workers")
@@ -78,167 +80,85 @@ func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan b
 	return
 }
 
-func TestConnection(t *testing.T) {
-
+func NewFtpConn(logl int, t *testing.T) (ftpClient *FTP, err os.Error) {
 	ftpAddress := "ftp.drivehq.com"
 	ftpPort := 21
 	username := "goftptest"
 	password := "g0ftpt3st"
-	homefolder := "/PublicFolder"
 
-	ftpClient := NewFTP(1) // 1 for debugging
+	ftpClient = NewFTP(logl) // 1 for debugging
 
 	ftpClient.SetPassive(true)
 
-	var (
-		resp *Response
-		err  os.Error
-	)
-
-	t.Logf("Using testing server: %s. This might not be accessible for ever...", ftpAddress)
-
 	// connect
-	resp, err = ftpClient.Connect(ftpAddress, ftpPort)
+	_, err = ftpClient.Connect(ftpAddress, ftpPort)
 	if err != nil {
 		t.Fatalf("The FTP connection could not be established, error: ", err.String())
 	}
-	defer ftpClient.Quit()
 
 	t.Logf("Connecting with username: %s and password %s", username, password)
-	resp, err = ftpClient.Login(username, password, "")
+	_, err = ftpClient.Login(username, password, "")
 	if err != nil {
 		t.Fatalf("The user could not be logged in, error: %s", err.String())
+	}
+
+	return
+
+}
+
+func TestFeatures(t *testing.T) {
+
+	ftpClient, err := NewFtpConn(0, t)
+	defer ftpClient.Quit()
+
+	if err != nil {
 		return
 	}
 
+	homefolder := "/PublicFolder"
+
+	var resp *Response
 	var cwd string
 	resp, err = ftpClient.Cwd(homefolder) // home
 	if err != nil {
 		t.Fatalf("error: ", err.String(), ", response:", resp.Message)
-		return
 	}
 
 	cwd, err = ftpClient.Pwd()
 	t.Log("The current folder is", cwd)
 
-	cwd, err = ftpClient.Pwd()
 	t.Log("Testings Mlsd")
 	ls, err := ftpClient.Mlsd(".", []string{"type", "size"})
 	if err != nil {
 		t.Logf("The ftp command MLSD does not work or is not supported, error: %s", err.String())
 	} else {
-
 		for _, l := range ls {
 			t.Logf("\nMlsd entry: %s, facts: %v", l.Name, l.Facts)
 		}
 	}
 
-	t.Log("Cleaning up before testing")
-
+	t.Logf("Testing upload\n")
 	test_f := "test"
+	maxSimultaneousConns := 1
 
-	cleanup := func() {
-
-		_, err = ftpClient.Cwd(homefolder)
-
-		if err != nil {
-			t.Fatalf("error: ", err.String(), ", response:", resp.Message)
-			return
-		}
-
-		//resp, err = ftpClient.Cwd(test_f)
-		defer ftpClient.Cwd(homefolder) //back to home at the end
-
-		if err == nil {
-			t.Logf("Removing directory tree %s before/after testing.", test_f)
-			
-			if err := ftpClient.RemoveRemoteDirTree(test_f); err != nil {
-				if err != DIRECTORY_NON_EXISTENT{
-					t.Fatalf("Error:", err.String())
-				}
-			}
-			
-		}
-	}
-
+	t.Log("Cleaning up before testing")
+	var cleanup = func() os.Error { return cleanupFolderTree(ftpClient, test_f, homefolder, t) }
 	cleanup()
 	defer cleanup() // at the end again
 
-	t.Log("Uploading folder tree:", filepath.Base(test_f))
-	maxSimultaneousConns := 2
-	filesTransmitted := make(map[string]bool, 100)
-	stats, fileUploaded, _ := startStats()
-	var collector = func(info *CallbackInfo) {
-		//fmt.Println("Received info from resource:", info.Resourcename)
-		if _, ok := filesTransmitted[info.Resourcename]; !ok {
-			filesTransmitted[info.Resourcename] = true // add to the collection
-		}
-		stats <- info // pipe in for stats
-
-	} // do not block the call
 	var n int
-	n, err = ftpClient.UploadDirTree(test_f, homefolder, maxSimultaneousConns, nil, collector)
 
-	// wait for all stats to finish
-	for k := 0; k < n; k++ {
-		<-fileUploaded
-	}
-
-	//err = ftpClient.UploadDirTree("test", nil)
+	n, err = ftpClient.UploadDirTree(test_f, homefolder, maxSimultaneousConns, nil, nil)
 	if err != nil {
-		t.Fatalf("Error:", err.String())
+		t.Fatalf("Error uploading folder tree %s, error:\n", test_f, err)
 	}
-
-	checkf := func(f string) {
-
-		t.Logf("Checking subfolder %s", f)
-		dirs := filepath.SplitList(f)
-		for _, d := range dirs {
-			resp, err = ftpClient.Cwd(d)
-			if err != nil {
-				t.Fatalf("The folder %s was not created.", f)
-			}
-			defer ftpClient.Cwd("..")
-		}
-
-		//files, _ := filepath.Glob(filepath.Join(f, "*"))
-		dir, _ := os.Open(f)
-		files, _ := dir.Readdirnames(-1)
-		fno := len(files)
-		t.Logf("No of files in local folder %s is: %d", f, fno)
-
-		var filelist []string
-		if filelist, err = ftpClient.Nlst(); err != nil {
-			t.Fatalf("No files in folder %s on the ftp server", f)
-		}
-
-		for _, locF := range files {
-			t.Logf("Checking local file or folder %s", locF)
-			fi, err := os.Stat(locF)
-			if err == nil && !fi.IsDirectory() {
-				var found bool
-				for _, remF := range filelist {
-					if strings.Contains(strings.ToLower(remF), strings.ToLower(locF)) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Fatalf("The local file %s could not be found at the server", locF)
-				}
-			}
-		}
-
-	}
-
-	ftpClient.Cwd(homefolder)
-	checkf("test")
-	checkf("test/subdir")
+	t.Logf("Uploaded %d files.\n", n)
 
 	t.Log("Checking download integrity by downloading the uploaded files and comparing the sizes")
 	ftpClient.Cwd(homefolder)
 
 	checkintegrity := func(fi string, istext bool) {
+		t.Logf("Checking download integrity of file %s\n", fi)
 		tkns := strings.Split(fi, "/")
 		ficp := "ftptest_" + tkns[len(tkns)-1]
 		err = ftpClient.DownloadFile(fi, ficp, istext)
@@ -264,4 +184,129 @@ func TestConnection(t *testing.T) {
 		checkintegrity(s, v)
 	}
 
+}
+
+func TestRecursion(t *testing.T) {
+
+	ftpClient, err := NewFtpConn(0, t)
+	defer ftpClient.Quit()
+
+	if err != nil {
+		return
+	}
+
+	test_f := "test"
+	noiterations := 1
+	homefolder := "/PublicFolder"
+	maxSimultaneousConns := 1
+
+	t.Log("Cleaning up before testing")
+
+	var cleanup = func() os.Error { return cleanupFolderTree(ftpClient, test_f, homefolder, t) }
+
+	var check = func(f string) os.Error { return checkFolder(ftpClient, f, homefolder, t) }
+
+	cleanup()
+	defer cleanup() // at the end again
+
+	stats, fileUploaded, _ := startStats()
+	var collector = func(info *CallbackInfo) {
+		if info.Eof {
+			stats <- info // pipe in for stats	
+		}
+	} // do not block the call
+
+
+	var n int
+	for i := 0; i < noiterations; i++ {
+		t.Log("\n -- Uploading folder tree:", filepath.Base(test_f))
+		n, err = ftpClient.UploadDirTree(test_f, homefolder, maxSimultaneousConns, nil, collector)
+		if err != nil {
+			t.Fatalf("Error uploading folder tree %s, error:\n", test_f, err)
+		}
+
+		// wait for all stats to finish
+		for k := 0; k < n; k++ {
+			<-fileUploaded
+		}
+
+		t.Logf("Uploaded %d files.\n", n)
+
+		check("test")
+		check("test/subdir")
+	}
+
+}
+
+// FTP routine utils
+
+
+func checkFolder(ftpClient *FTP, f string, homefolder string, t *testing.T) (err os.Error) {
+
+	_, err = ftpClient.Cwd(homefolder)
+	if err != nil {
+		t.Fatalf("Error in Cwd for folder %s:", homefolder, err.String())
+	}
+
+	defer ftpClient.Cwd(homefolder) //back to home at the end
+
+	t.Logf("Checking subfolder %s", f)
+	dirs := filepath.SplitList(f)
+	for _, d := range dirs {
+		_, err = ftpClient.Cwd(d)
+		if err != nil {
+			t.Fatalf("The folder %s was not created.", f)
+		}
+		ftpClient.Cwd("..")
+	}
+
+	var filelist []string
+	if filelist, err = ftpClient.Nlst(); err != nil {
+		t.Fatalf("No files in folder %s on the ftp server", f)
+	}
+
+	dir, _ := os.Open(f)
+	files, _ := dir.Readdirnames(-1)
+	fno := len(files)
+	t.Logf("No of files in local folder %s is: %d", f, fno)
+
+	for _, locF := range files {
+		t.Logf("Checking local file or folder %s", locF)
+		fi, err := os.Stat(locF)
+		if err == nil && !fi.IsDirectory() {
+			var found bool
+			for _, remF := range filelist {
+				if strings.Contains(strings.ToLower(remF), strings.ToLower(locF)) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("The local file %s could not be found at the server", locF)
+			}
+		}
+	}
+
+	return
+
+}
+
+func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *testing.T) (err os.Error) {
+
+	_, err = ftpClient.Cwd(homefolder)
+	if err != nil {
+		t.Fatalf("Error in Cwd for folder %s:", homefolder, err.String())
+	}
+
+	defer ftpClient.Cwd(homefolder) //back to home at the end
+
+	t.Logf("Removing directory tree %s.", test_f)
+
+	if err := ftpClient.RemoveRemoteDirTree(test_f); err != nil {
+		if err != DIRECTORY_NON_EXISTENT {
+			t.Fatalf("Error:", err.String())
+		}
+	}
+
+	return
 }
