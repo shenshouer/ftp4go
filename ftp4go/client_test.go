@@ -6,6 +6,7 @@ import (
 	"strings"
 	"path/filepath"
 	"fmt"
+	"time"
 )
 
 func askParameter(question string, defaultValue string) (inputValue string, err os.Error) {
@@ -196,7 +197,7 @@ func TestRecursion(t *testing.T) {
 	}
 
 	test_f := "test"
-	noiterations := 1
+	noiterations := 2
 	homefolder := "/PublicFolder"
 	maxSimultaneousConns := 1
 
@@ -206,7 +207,6 @@ func TestRecursion(t *testing.T) {
 
 	var check = func(f string) os.Error { return checkFolder(ftpClient, f, homefolder, t) }
 
-	cleanup()
 	defer cleanup() // at the end again
 
 	stats, fileUploaded, _ := startStats()
@@ -216,10 +216,14 @@ func TestRecursion(t *testing.T) {
 		}
 	} // do not block the call
 
-
 	var n int
 	for i := 0; i < noiterations; i++ {
-		t.Log("\n -- Uploading folder tree:", filepath.Base(test_f))
+		t.Logf("\n -- Uploading folder tree: %s, iteration %d\n", filepath.Base(test_f), i+1)
+
+		cleanup()
+		t.Logf("Sleeping a second\n")
+		time.Sleep(1e9)
+
 		n, err = ftpClient.UploadDirTree(test_f, homefolder, maxSimultaneousConns, nil, collector)
 		if err != nil {
 			t.Fatalf("Error uploading folder tree %s, error:\n", test_f, err)

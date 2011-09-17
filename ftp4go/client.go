@@ -209,7 +209,9 @@ func (ftp *FTP) Connect(host string, port int) (resp *Response, err os.Error) {
 	}
 	ftp.conn.SetTimeout(1e6 * ftp.timeoutInMsec)
 
-	resp, err = ftp.Read(NONE_FTP_CMD)
+	if resp, err = ftp.Read(NONE_FTP_CMD); err != nil {
+		return
+	}
 	ftp.welcome = resp.Message
 	ftp.writeInfo("Successfully connected on local address:", ftp.conn.LocalAddr())
 	return

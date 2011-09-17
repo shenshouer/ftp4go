@@ -27,6 +27,7 @@ func (ftp *FTP) RemoveRemoteDirTree(remoteDir string) (err os.Error) {
 }
 
 // removeRemoteDirTree removes a remote folder and all of its subfolders recursively.
+// The error DIRECTORY_NON_EXISTENT of type os.Error is thrown if the FTP folder does not exist.
 func (ftp *FTP) removeRemoteDirTree(remoteDir string) (err os.Error) {
 	ftp.writeInfo("Changing working remote dir to:", remoteDir)
 
