@@ -541,6 +541,10 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err os
 
 		for {
 			line, err := ftpReader.readLine()
+			if _, err1 := fmt.Fprint(writer, line); err1 != nil {
+				return err1
+			}
+			//writer.Write([]byte(line))
 			if err != nil {
 				if err == os.EOF {
 					ftp.writeInfo("Reached end of buffer with line:", line)
@@ -548,8 +552,6 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err os
 				}
 				return err
 			}
-			fmt.Fprint(writer, line)
-			//writer.Write([]byte(line))
 		}
 		return nil
 
@@ -596,16 +598,20 @@ func (ftp *FTP) GetBytes(cmd FtpCmd, writer io.Writer, blocksize int, params ...
 		var n int
 
 		for {
-			if n, err = bufReader.Read(s); err != nil {
+
+			n, err = bufReader.Read(s)
+			ftp.writeInfo("GETBYTES: Number of bytes read:", n)
+			if _, err1 := writer.Write(s[:n]); err1 != nil {
+				return err1
+			}
+
+			if err != nil {
 				if err == os.EOF {
 					break
 				}
 				return err
 			}
-			ftp.writeInfo("GETBYTES: Number of bytes read:", n)
-			if _, err = writer.Write(s[:n]); err != nil {
-				return err
-			}
+
 		}
 
 		return nil
@@ -658,9 +664,9 @@ func (ftp *FTP) StoreLines(cmd FtpCmd, reader io.Reader, remotename string, file
 					return err
 				}
 			}
-			if !eof {
-				n, err = fmt.Fprintln(conn, line)
-			}
+
+			n, err = fmt.Fprintln(conn, line)
+
 			if err != nil {
 				return err
 			}
@@ -724,10 +730,8 @@ func (ftp *FTP) StoreBytes(cmd FtpCmd, reader io.Reader, blocksize int, remotena
 				}
 			}
 
-			if !eof {
-				if nw, err = conn.Write(s[:nr]); err != nil {
-					return err
-				}
+			if nw, err = conn.Write(s[:nr]); err != nil {
+				return err
 			}
 
 			if callback != nil {

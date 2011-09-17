@@ -167,38 +167,6 @@ func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err os.Error) {
 	return nil, err
 }
 
-/*
-func (ftp *FTP) ReadDirect(cmd FtpCmd) (response *Response, err os.Error) {
-	ret := make([]byte, 1024)
-	var n int
-	if n, err = ftp.tcpConn.Read(ret); err != nil {
-		return nil, err
-	}
-	msg := string(ret[:n])
-	code, _ := strconv.Atoi(msg[:3])
-	//message := msg[4 : len(msg)-2]
-	return &Response{Code: code, Message: msg}, nil
-}
-*/
-
-// all should be done already!! -> bufio.ReadLine
-// from textproto.NewReader
-// ReadLineBytes is like ReadLine but returns a []byte instead of a string.
-/*
-func (r *FtpReader) ReadLineBytes() ([]byte, os.Error) {
-	//r.closeDot()
-	line, err := r.R.ReadBytes('\n')
-	n := len(line)
-	if n > 0 && line[n-1] == '\n' {
-		n--
-		if n > 0 && line[n-1] == '\r' {
-			n--
-		}
-	}
-	return line[0:n], err
-}
-*/
-
 // parse227 parses the 227 response for PASV request.
 // Raises a protocol error if it does not contain {h1,h2,h3,h4,p1,p2}.
 // Returns the host and port.
