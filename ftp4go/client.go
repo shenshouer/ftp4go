@@ -344,21 +344,30 @@ func (ftp *FTP) Mlsd(path string, facts []string) (ls []*NameFactsLine, err os.E
 	return
 }
 
+// Feat lists all new FTP features that the server supports beyond those described in RFC 959.
+func (ftp *FTP) Feat(params ...string) (fts []string, err os.Error) {
+	var r *Response
+	if r, err = ftp.SendAndReadEmpty(FEAT_FTP_CMD); err != nil {
+		return
+	}
+
+	return parse211(r)
+}
+
 // Nlst returns a list of file in a directory, by default the current.
 func (ftp *FTP) Nlst(params ...string) (filelist []string, err os.Error) {
-	files := make([]string, 0, 50)
-	sw := &stringSliceWriter{files}
-	if err = ftp.GetLines(NLST_FTP_CMD, sw, params...); err != nil {
-		return nil, err
-	}
-	return sw.s, nil
+	return ftp.getList(NLST_FTP_CMD, params...)
 }
 
 // Dir returns a list of file in a directory in long form, by default the current.
 func (ftp *FTP) Dir(params ...string) (filelist []string, err os.Error) {
+	return ftp.getList(LIST_FTP_CMD, params...)
+}
+
+func (ftp *FTP) getList(cmd FtpCmd, params ...string) (filelist []string, err os.Error) {
 	files := make([]string, 0, 50)
 	sw := &stringSliceWriter{files}
-	if err = ftp.GetLines(LIST_FTP_CMD, sw, params...); err != nil {
+	if err = ftp.GetLines(cmd, sw, params...); err != nil {
 		return nil, err
 	}
 	return sw.s, nil
@@ -500,11 +509,6 @@ func (ftp *FTP) UploadFile(remotename string, localpath string, istext bool, cal
 	}
 
 	return err
-}
-
-// Feat lists all new FTP features that the server supports beyond those described in RFC 959.
-func (ftp *FTP) Feat(params ...string) (response *Response, err os.Error) {
-	return ftp.SendAndReadEmpty(FEAT_FTP_CMD)
 }
 
 // Opts returns a list of file in a directory in long form, by default the current.

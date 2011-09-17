@@ -20,7 +20,7 @@ type connPars struct {
 
 var allpars = []*connPars{
 	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: false},
-	&connPars{ftpAddress: "ftp.fileserve.com", ftpPort: 21, username: "ftp4go", password: "52fe56bc", homefolder: "/", debugFtp: false},
+	&connPars{ftpAddress: "ftp.fileserve.com", ftpPort: 21, username: "ftp4go", password: "52fe56bc", homefolder: "/", debugFtp: true},
 }
 
 var pars = allpars[0]
@@ -86,6 +86,16 @@ func TestFeatures(t *testing.T) {
 
 	homefolder := pars.homefolder
 	fmt.Println("The home folder is:", homefolder)
+
+	fts, err := ftpClient.Feat()
+	if err != nil {
+		t.Fatalf("error: ", err)
+	}
+
+	fmt.Printf("Supported feats\n")
+	for _, ft := range fts {
+		fmt.Printf("%s\n", ft)
+	}
 
 	//var resp *Response
 	var cwd string

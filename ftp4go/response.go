@@ -54,22 +54,29 @@ func NewFtpReader(conn net.Conn) *FtpReader {
 func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 	var line string
 	if line, err = reader.readLine(); err != nil {
-		return line, err
+		if err != os.EOF {
+			return line, err
+		}
 	}
 
 	if line[3:4] == "-" {
 		for code := line[:3]; ; {
 			var nextline string
 			if nextline, err = reader.readLine(); err != nil {
-				return line, err
+				if err != os.EOF {
+					return line, err
+				}
 			}
-			line = line + ("\n" + nextline)
+			line = line + "\n" + nextline
 			if nextline[:3] == code && nextline[3:4] != "-" {
+				break
+			}
+			if err == os.EOF {
 				break
 			}
 		}
 	}
-	return line, err
+	return line, nil
 }
 
 // readLine returns one line from the server stripping CRLF.
@@ -78,19 +85,7 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 // NOTE:
 // the encoding is always unicode.
 func (reader *FtpReader) readLine() (line string, err os.Error) {
-
-	//var isPrefix bool
-	line, err = reader.R.ReadLine()
-
-	if err != nil {
-		/*
-			if err == os.EOF {
-				err = io.ErrUnexpectedEOF
-			}
-		*/
-		return line, err
-	}
-	return line, err
+	return reader.R.ReadLine()
 }
 
 // SendAndRead sends a command to the server and reads the response.
@@ -272,4 +267,36 @@ func parse257(resp *Response) (dirname string, err os.Error) {
 		dirname = dirname + string(c)
 	}
 	return dirname, nil
+}
+
+// parse211 parses the 211 response for a FEAT command.
+// Return the list of feats.
+func parse211(resp *Response) (list []string, err os.Error) {
+	if resp.Code != 211 {
+		err = NewErrProto(os.NewError(resp.Message))
+		return nil, err
+	}
+
+	list = make([]string, 0, 20)
+	var no int
+
+	r := bufio.NewReader(strings.NewReader(resp.Message))
+
+	for {
+		line, _, err := r.ReadLine()
+		l := strings.TrimSpace(string(line))
+
+		if !strings.HasPrefix(l, strconv.Itoa(resp.Code)) && len(l) > 0 {
+			list = append(list, l)
+			no++
+		}
+		if err != nil {
+			if err == os.EOF {
+				break
+			}
+			return
+		}
+	}
+	return list[:no], nil
+
 }
