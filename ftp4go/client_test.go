@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const HOMEFOLDER = "/PublicFolder"
+
 func askParameter(question string, defaultValue string) (inputValue string, err os.Error) {
 	fmt.Print(question)
 	//originalStdout := os.Stdout
@@ -116,7 +118,7 @@ func TestFeatures(t *testing.T) {
 		return
 	}
 
-	homefolder := "/PublicFolder"
+	homefolder := HOMEFOLDER
 
 	var resp *Response
 	var cwd string
@@ -198,8 +200,9 @@ func TestRecursion(t *testing.T) {
 
 	test_f := "test"
 	noiterations := 2
-	homefolder := "/PublicFolder"
+
 	maxSimultaneousConns := 1
+	homefolder := HOMEFOLDER
 
 	t.Log("Cleaning up before testing")
 
