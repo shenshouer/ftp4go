@@ -153,7 +153,7 @@ func NewFTP(debuglevel int) *FTP {
 	return ftp
 }
 
-// Connect connects to the host by using the specified port of the default if the value is <=0.
+// Connect connects to the host by using the specified port or the default one if the value is <=0.
 func (ftp *FTP) Connect(host string, port int) (resp *Response, err os.Error) {
 
 	//ftp.logger.Printf("%s:%d", ftp.Host, ftp.Port)
