@@ -70,6 +70,13 @@ type FtpReader struct {
 	R *bufio.Reader
 }
 
+var re227, re150 *regexp.Regexp
+
+func init() {
+	re227, _ = regexp.Compile("([0-9]+),([0-9]+),([0-9]+),([0-9]+),([0-9]+),([0-9]+)")
+	re150, _ = regexp.Compile("150 .* \\(([0-9]+) bytes\\)")
+}
+
 // NewReader returns a new Reader reading from r.
 func NewFtpReader(conn net.Conn) *FtpReader {
 	return &FtpReader{R: bufio.NewReader(conn)}
@@ -204,8 +211,7 @@ func parse227(resp *Response) (host string, port int, err os.Error) {
 		return
 	}
 
-	re, _ := regexp.Compile("([0-9]+),([0-9]+),([0-9]+),([0-9]+),([0-9]+),([0-9]+)")
-	matches := re.FindStringSubmatch(resp.Message)
+	matches := re227.FindStringSubmatch(resp.Message)
 	if matches == nil {
 		err = NewErrProto(os.NewError("No matching pattern for message:" + resp.Message))
 		return
@@ -226,8 +232,7 @@ func parse150ForSize(resp *Response) (int, os.Error) {
 		return -1, NewErrReply(os.NewError(resp.Message))
 	}
 
-	re, _ := regexp.Compile("150 .* \\(([0-9]+) bytes\\)")
-	matches := re.FindStringSubmatch(resp.Message)
+	matches := re150.FindStringSubmatch(resp.Message)
 	if len(matches) < 2 {
 		return -1, nil
 	}
