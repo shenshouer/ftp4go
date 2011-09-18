@@ -430,9 +430,9 @@ func (ftp *FTP) Quit() (response *Response, err os.Error) {
 
 // DownloadFile downloads a file and stores it locally.
 // There are two modes:
-// - binary, 	isascii = false
-// - text, 		isascii = true
-func (ftp *FTP) DownloadFile(remotename string, localpath string, isascii bool) (err os.Error) {
+// - binary, 				useLineMode = false
+// - line by line (text), 	useLineMode = true
+func (ftp *FTP) DownloadFile(remotename string, localpath string, useLineMode bool) (err os.Error) {
 	// remove local file
 	os.Remove(localpath)
 	var f *os.File
@@ -443,7 +443,7 @@ func (ftp *FTP) DownloadFile(remotename string, localpath string, isascii bool) 
 		return
 	}
 
-	if isascii {
+	if useLineMode {
 		w := newTextFileWriter(f)
 		defer w.bw.Flush() // remember to flush
 		if err = ftp.GetLines(RETR_FTP_CMD, w, remotename); err != nil {
@@ -459,8 +459,11 @@ func (ftp *FTP) DownloadFile(remotename string, localpath string, isascii bool) 
 }
 
 // UploadFile uploads a file from a local path to the current folder (see Cwd too) on the FTP server. 
-// A remotename needs to be specified along with a flag saying whether the file contains text or binary data. 
-func (ftp *FTP) UploadFile(remotename string, localpath string, isascii bool, callback Callback) (err os.Error) {
+// A remotename needs to be specified.
+// There are two modes set via the useLineMode flag:
+// - binary, 				useLineMode = false
+// - line by line (text), 	useLineMode = true 
+func (ftp *FTP) UploadFile(remotename string, localpath string, useLineMode bool, callback Callback) (err os.Error) {
 	var f *os.File
 	f, err = os.Open(localpath)
 	defer f.Close()
@@ -469,7 +472,7 @@ func (ftp *FTP) UploadFile(remotename string, localpath string, isascii bool, ca
 		return
 	}
 
-	if isascii {
+	if useLineMode {
 		if err = ftp.StoreLines(STORE_FTP_CMD, f, remotename, localpath, callback); err != nil {
 			return err
 		}
