@@ -92,19 +92,6 @@ func (ftp *FTP) UploadDirTree(localDir string, remoteRootDir string, maxSimultan
 	//go back to original wd
 	defer ftp.Cwd(pwd)
 
-	var (
-		reqs chan *request
-		//resps map[*request]chan os.Error
-		quit chan bool
-	)
-
-	// NOTE: stick this to 1, it does not work otherwise
-	//maxSimultaneousConns = 1
-	useGoRoutines := false //maxSimultaneousConns >= 1
-	if useGoRoutines {
-		reqs, quit = startServer(ftp, maxSimultaneousConns, callback)
-	}
-
 	//all lower case
 	var exDirs sort.StringSlice
 	if len(excludedDirs) > 0 {
@@ -115,20 +102,15 @@ func (ftp *FTP) UploadDirTree(localDir string, remoteRootDir string, maxSimultan
 		exDirs.Sort()
 	}
 
-	err = ftp.uploadDirTree(localDir, exDirs, reqs, useGoRoutines, quit, callback, &n)
+	err = ftp.uploadDirTree(localDir, exDirs, callback, &n)
 	if err != nil {
 		ftp.writeInfo(fmt.Sprintf("An error while uploading the folder %s occurred.", localDir))
-	}
-
-	if useGoRoutines {
-		// collect responses
-		quit <- true // stopping the server
 	}
 
 	return n, err
 }
 
-func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, queue chan *request, useGoRoutines bool, quit chan bool, callback Callback, n *int) (err os.Error) {
+func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, callback Callback, n *int) (err os.Error) {
 
 	_, dir := filepath.Split(localDir)
 	ftp.writeInfo("The directory where to upload is:", dir)
@@ -152,7 +134,6 @@ func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, qu
 	ftp.writeInfo("Found", len(files), "files")
 	sort.Strings(files) // sort by name
 
-	dirRequests := []*request{}
 	for _, s := range files {
 		_, fname := filepath.Split(s) // find file name
 		localPath := filepath.Join(localDir, fname)
@@ -162,20 +143,14 @@ func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, qu
 			return
 		}
 		if !f.IsDirectory() {
-			if useGoRoutines {
-				// response channel with one shot, let the response go through without blocking
-				r := &request{fname, localPath, false, make(chan os.Error, 1)}
-				dirRequests = append(dirRequests, r) // add request to slice
-			} else {
-				err = ftp.UploadFile(fname, localPath, false, callback) // always binary upload
-				if err != nil {
-					return
-				}
-				*n += 1 // increment
+			err = ftp.UploadFile(fname, localPath, false, callback) // always binary upload
+			if err != nil {
+				return
 			}
+			*n += 1 // increment
 		} else {
 			if len(excludedDirs) > 0 {
-				ftp.writeInfo("Checking folder:", fname)
+				ftp.writeInfo("Checking folder name:", fname)
 				lfname := strings.ToLower(fname)
 				idx := sort.SearchStrings(excludedDirs, lfname)
 				if idx < len(excludedDirs) && excludedDirs[idx] == lfname {
@@ -183,64 +158,12 @@ func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, qu
 					continue
 				}
 			}
-			if err = ftp.uploadDirTree(localPath, excludedDirs, queue, useGoRoutines, quit, callback, n); err != nil {
+			if err = ftp.uploadDirTree(localPath, excludedDirs, callback, n); err != nil {
 				return
 			}
 		}
 
 	}
 
-	// upload simulaneously BUT ON A FOLDER BASIS!
-	if useGoRoutines {
-		for _, r := range dirRequests {
-			queue <- r
-		}
-
-		// collect responses for the current folder
-		for _, r := range dirRequests {
-			if e := <-r.resultChan; e == nil {
-				ftp.writeInfo(fmt.Sprintf("Success, file: %s", r.localpath))
-			} else {
-				ftp.writeInfo(fmt.Sprintf("Error, file: %s. Error %s", r.localpath, e))
-				err = e // save last error
-				// quit <- true // get out and shut down
-				// break
-			}
-		}
-	}
-
-	return
-}
-
-type request struct {
-	remotename string
-	localpath  string
-	istext     bool
-	resultChan chan os.Error
-}
-
-func startServer(ftp *FTP, maxUploads int, callback Callback) (queue chan *request, quit chan bool) {
-	queue = make(chan *request)
-	quit = make(chan bool)
-	sem := make(chan int, maxUploads)
-
-	go func() {
-		for {
-			select {
-			case req := <-queue:
-				go func() {
-					sem <- 1 // Wait for active queue to drain.
-					ftp.writeInfo("THE QUEUE HAS A SLOT: uploading file:", req.localpath)
-					e := ftp.UploadFile(req.remotename, req.localpath, req.istext, callback)
-					req.resultChan <- e
-					<-sem // Done; enable next request to run.
-				}()
-			case <-quit:
-				ftp.writeInfo("Stopping workers")
-				return // get out
-			}
-
-		}
-	}()
 	return
 }
