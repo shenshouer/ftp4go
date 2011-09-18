@@ -74,6 +74,11 @@ func NewFtpConn(t *testing.T) (ftpClient *FTP, err os.Error) {
 	return
 }
 
+type asciiTestSet struct {
+	fname   string
+	isascii bool
+}
+
 func TestServerAsciiMode(t *testing.T) {
 
 	ftpClient, err := NewFtpConn(t)
@@ -88,14 +93,29 @@ func TestServerAsciiMode(t *testing.T) {
 		t.Fatalf("error: ", err)
 	}
 
-	t_file := "test/test.txt"
-	r_filename := "remote_test.txt"
-	if err = ftpClient.UploadFile(r_filename, t_file, true, nil); err != nil {
-		t.Fatalf("error: ", err)
+	fstochk := []*asciiTestSet{
+		&asciiTestSet{"test/test.txt", true},
+		&asciiTestSet{"test/test.txt", false},
 	}
-	defer ftpClient.Delete(r_filename)
 
-	t.Logf("Uploaded %s file in ASCII mode.\n", t_file)
+	var getPrefixedName = func(fn string, textmode bool) string {
+		f := filepath.Base(fn)
+		prefix := "remote_binary_"
+		if textmode {
+			prefix = "remote_ascii_"
+		}
+		return prefix + f
+	}
+
+	for _, entry := range fstochk {
+		r_filename := getPrefixedName(entry.fname, entry.isascii)
+		fmt.Printf("Uploading file %s\n", r_filename)
+		if err = ftpClient.UploadFile(r_filename, entry.fname, entry.isascii, nil); err != nil {
+			t.Fatalf("error: ", err)
+		}
+		t.Logf("Uploaded %s file in ASCII mode.\n", r_filename)
+		defer ftpClient.Delete(r_filename)
+	}
 
 	check := func(remotename string, localpath string, istext bool) {
 		s1, s2, tempFilePath := checkintegrityWithPaths(ftpClient, remotename, localpath, istext, false, t)
@@ -113,10 +133,10 @@ func TestServerAsciiMode(t *testing.T) {
 		}
 	}
 
-	fstochk := map[string]string{r_filename: t_file}
-	for s, l_name := range fstochk {
-		check(s, l_name, true)
-		check(s, l_name, false)
+	for _, entry := range fstochk {
+		fn := getPrefixedName(entry.fname, entry.isascii)
+		check(fn, entry.fname, true)
+		check(fn, entry.fname, false)
 	}
 
 }
@@ -200,7 +220,7 @@ func TestFeatures(t *testing.T) {
 
 }
 
-func TestRecursion(t *testing.T) {
+func _TestRecursion(t *testing.T) {
 
 	ftpClient, err := NewFtpConn(t)
 	defer ftpClient.Quit()
