@@ -5,7 +5,7 @@ GOFMT=gofmt -s -spaces=true -tabindent=false -tabwidth=4
 
 GOFILES=\
   client.go\
-  response.go\
+  clientproto.go\
   clientutil.go\
 
 include $(GOROOT)/src/Make.pkg

@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"io"
 	"bufio"
-	//"utf16"
-	"net/textproto"
 )
 
 // The default constants
@@ -86,32 +84,25 @@ var ftpCmdStrings = map[FtpCmd]string{
 	QUIT_FTP_CMD:       "QUIT",
 }
 
-func getFirstChar(resp *Response) string {
-	return string(resp.Message[0])
+// The FTP client structure containing:
+// - host, user, password, acct, timeout
+type FTP struct {
+	debugging     int
+	Host          string
+	Port          int
+	file          string
+	welcome       string
+	passiveserver bool
+	logger        *log.Logger
+	timeoutInMsec int64
+	conn          net.Conn
+	//textprotoConn     *textproto.Conn
+	encoding string
 }
 
-// string writer
-type stringSliceWriter struct {
-	s []string
-}
-
-// utility string writer
-func (sw *stringSliceWriter) Write(p []byte) (n int, err os.Error) {
-	sw.s = append(sw.s, string(p))
-	n = len(sw.s)
-	return
-}
-
-// string writer
-type textFileWriter struct {
-	f *os.File
-}
-
-// utility string writer
-func (tfw *textFileWriter) Write(p []byte) (n int, err os.Error) {
-	//add carriage return
-	//return tfw.f.WriteString(string(p) + "\n")
-	return fmt.Fprintln(tfw.f, string(p))
+type NameFactsLine struct {
+	Name  string
+	Facts map[string]string
 }
 
 func (i FtpCmd) String() string {
@@ -138,20 +129,10 @@ func (i FtpCmd) AppendParameters(pars ...string) string {
 	return strings.Join(allPars[:k], " ")
 }
 
-// The FTP client structure containing:
-// - host, user, password, acct, timeout
-type FTP struct {
-	debugging     int
-	Host          string
-	Port          int
-	file          string
-	welcome       string
-	passiveserver bool
-	logger        *log.Logger
-	timeoutInMsec int64
-	conn          net.Conn
-	//textprotoConn     *textproto.Conn
-	encoding string
+func (ftp *FTP) writeInfo(params ...interface{}) {
+	if ftp.debugging >= 1 {
+		log.Println(params...)
+	}
 }
 
 // NewFTP creates a new FTP client using a debug level, default is 0, which is disabled.
@@ -170,12 +151,6 @@ func NewFTP(debuglevel int) *FTP {
 		encoding:      "latin1",
 	}
 	return ftp
-}
-
-func (ftp *FTP) writeInfo(params ...interface{}) {
-	if ftp.debugging >= 1 {
-		log.Println(params...)
-	}
 }
 
 // Connect connects to the host by using the specified port of the default if the value is <=0.
@@ -299,11 +274,6 @@ func (ftp *FTP) makePasv() (host string, port int, err os.Error) {
 // Acct sends an ACCT command.
 func (ftp *FTP) Acct() (response *Response, err os.Error) {
 	return ftp.SendAndReadEmpty(ACCT_FTP_CMD)
-}
-
-type NameFactsLine struct {
-	Name  string
-	Facts map[string]string
 }
 
 // Mlsd lists a directory in a standardized format by using MLSD
@@ -650,14 +620,14 @@ func (ftp *FTP) StoreLines(cmd FtpCmd, reader io.Reader, remotename string, file
 
 		ftp.writeInfo("Try and write lines via connection for remote address:", conn.RemoteAddr().String())
 
-		lineReader := textproto.NewReader(bufio.NewReader(reader))
+		lineReader := bufio.NewReader(reader)
 
 		var tot int64
 
 		for {
 			var n int
 			var eof bool
-			line, err := lineReader.ReadLine()
+			line, _, err := lineReader.ReadLine()
 			if err != nil {
 				eof = err == os.EOF
 				if !eof {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"regexp"
 	"net"
-	"net/textproto"
 	"fmt"
 )
 
@@ -21,6 +20,34 @@ var (
 	NewErrPerm  = func(error os.Error) os.Error { return os.NewError("Permanent error: " + error.String()) }
 	NewErrProto = func(error os.Error) os.Error { return os.NewError("Protocol error: " + error.String()) }
 )
+
+func getFirstChar(resp *Response) string {
+	return string(resp.Message[0])
+}
+
+// string writer
+type stringSliceWriter struct {
+	s []string
+}
+
+// utility string writer
+func (sw *stringSliceWriter) Write(p []byte) (n int, err os.Error) {
+	sw.s = append(sw.s, string(p))
+	n = len(sw.s)
+	return
+}
+
+// string writer
+type textFileWriter struct {
+	f *os.File
+}
+
+// utility string writer
+func (tfw *textFileWriter) Write(p []byte) (n int, err os.Error) {
+	//add carriage return
+	//return tfw.f.WriteString(string(p) + "\n")
+	return fmt.Fprintln(tfw.f, string(p))
+}
 
 type CallbackInfo struct {
 	Resourcename     string
@@ -40,12 +67,12 @@ type Response struct {
 // A Reader implements convenience methods for reading requests
 // or responses from a text protocol network connection.
 type FtpReader struct {
-	R *textproto.Reader //*bufio.Reader
+	R *bufio.Reader
 }
 
 // NewReader returns a new Reader reading from r.
 func NewFtpReader(conn net.Conn) *FtpReader {
-	return &FtpReader{R: textproto.NewReader(bufio.NewReader(conn))}
+	return &FtpReader{R: bufio.NewReader(conn)}
 }
 
 // readMultiLine gets a response which may possibly consist of multiple lines. 
@@ -85,7 +112,8 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 // NOTE:
 // the encoding is always unicode.
 func (reader *FtpReader) readLine() (line string, err os.Error) {
-	return reader.R.ReadLine()
+	l, _, err := reader.R.ReadLine()
+	return string(l), err
 }
 
 // SendAndRead sends a command to the server and reads the response.
