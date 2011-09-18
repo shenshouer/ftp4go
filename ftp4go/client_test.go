@@ -93,12 +93,13 @@ func TestServerAsciiMode(t *testing.T) {
 	if err = ftpClient.UploadFile(r_filename, t_file, true, nil); err != nil {
 		t.Fatalf("error: ", err)
 	}
+	defer ftpClient.Delete(r_filename)
 
 	t.Logf("Uploaded %s file in ASCII mode.\n", t_file)
 
 	check := func(remotename string, localpath string, istext bool) {
 		s1, s2, tempFilePath := checkintegrityWithPaths(ftpClient, remotename, localpath, istext, false, t)
-		//defer os.Remove(tempFilePath)
+		defer os.Remove(tempFilePath)
 		t.Logf("\n---Check results\nMode is text: %v.\nDownloaded %s file to local file%s.\n", istext, remotename, tempFilePath)
 
 		if s1 != s2 {
@@ -106,12 +107,16 @@ func TestServerAsciiMode(t *testing.T) {
 		} else {
 			t.Logf("The size of real file %s and the downloaded copy %s are the same, size: %d\n", localpath, remotename, s1)
 		}
+
+		if istext && s1 != s2 {
+			t.Fatalf("The size of the file uploaded in ASCII mode should be the same as the downloaded in ASCII mode.")
+		}
 	}
 
 	fstochk := map[string]string{r_filename: t_file}
 	for s, l_name := range fstochk {
 		check(s, l_name, true)
-		//check(s, l_name, false)
+		check(s, l_name, false)
 	}
 
 }

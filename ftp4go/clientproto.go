@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"net"
 	"fmt"
-	//"net/textproto"
 )
 
 const (
@@ -82,69 +81,22 @@ func init() {
 	re150, _ = regexp.Compile("150 .* \\(([0-9]+) bytes\\)")
 }
 
-type skipEmptyReader struct {
+// A Reader implements convenience methods for reading requests
+// or responses from a text protocol network connection.
+type FtpReader struct {
 	r *bufio.Reader
 }
 
 // readLine returns one line from the server stripping CRLF.
-// If a line has zero length it sets the flag isEmpty.
 // Return an error if the connection fails.
-// 
-// NOTE:
-// the encoding is always unicode.
-func (reader *skipEmptyReader) readLine() (line []byte, isEmpty bool, err os.Error) {
-
-	line, err = reader.r.ReadSlice('\n')
-	// Important: return nil if there is nothing, different to the standard implementation
-	isEmpty = len(line) == 0
-	// fmt.Println("FtpReader, the line is empty:", isEmpty)
-
-	if isEmpty {
-		fmt.Println("FtpReader, the line is empty, the error was:", err)
-		return nil, true, err
-	}
-
-	if err == bufio.ErrBufferFull {
-		return line, false, nil
-	}
-
-	err = nil
-
-	if line[len(line)-1] == '\n' {
-		line = line[:len(line)-1]
-	}
-	if len(line) > 0 && line[len(line)-1] == '\r' {
-		line = line[:len(line)-1]
-	}
-	return line, isEmpty, err
-
-	/*
-		l, _, err := reader.R.ReadLine() //reader.Pr.ReadLineBytes() 
-
-		return l, err
-	*/
-}
-
-func newSkipEmptyReader(conn net.Conn) (r *skipEmptyReader) {
-	r = &skipEmptyReader{r: bufio.NewReader(conn)}
-	return
-}
-
-// A Reader implements convenience methods for reading requests
-// or responses from a text protocol network connection.
-type FtpReader struct {
-	r *skipEmptyReader
-	//Pr *textproto.Reader
-}
-
-func (reader *FtpReader) readLine() (line []byte, isEmpty bool, err os.Error) {
-	return reader.r.readLine()
+func (reader *FtpReader) readLine() (line []byte, err os.Error) {
+	l, _, err := reader.r.ReadLine()
+	return l, err
 }
 
 // NewReader returns a new Reader reading from r.
 func NewFtpReader(conn net.Conn) (fr *FtpReader) {
-	fr = &FtpReader{r: newSkipEmptyReader(conn)}
-	//fr.Pr = textproto.NewReader(fr.R) 
+	fr = &FtpReader{r: bufio.NewReader(conn)}
 	return
 }
 
@@ -154,7 +106,7 @@ func NewFtpReader(conn net.Conn) (fr *FtpReader) {
 func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 	var l []byte
 	//var isEmpty bool
-	l, _, err = reader.readLine()
+	l, err = reader.readLine()
 	line := string(l)
 	if err != nil {
 		if err != os.EOF {
@@ -164,7 +116,7 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 
 	if line[3:4] == "-" {
 		for code := line[:3]; ; {
-			l, _, err = reader.readLine()
+			l, err = reader.readLine()
 			nextline := string(l)
 			if err != nil {
 				if err != os.EOF {
@@ -345,17 +297,19 @@ func parse211(resp *Response) (list []string, err os.Error) {
 
 	for {
 		line, _, err := r.ReadLine()
-		l := strings.TrimSpace(string(line))
 
-		if !strings.HasPrefix(l, strconv.Itoa(resp.Code)) && len(l) > 0 {
-			list = append(list, l)
-			no++
-		}
 		if err != nil {
 			if err == os.EOF {
 				break
 			}
 			return
+		}
+
+		l := strings.TrimSpace(string(line))
+
+		if !strings.HasPrefix(l, strconv.Itoa(resp.Code)) && len(l) > 0 {
+			list = append(list, l)
+			no++
 		}
 	}
 	return list[:no], nil

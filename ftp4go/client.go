@@ -511,15 +511,8 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err os
 		ftp.writeInfo("Try and get lines via connection for remote address:", conn.RemoteAddr().String())
 
 		for {
-			line, isEmpty, err := ftpReader.readLine()
+			line, err := ftpReader.readLine()
 
-			//! DO NOT DO THIS: it strips emtpy strings
-			// if _, err1 := fmt.Fprint(writer, line); err1 != nil {
-			if !isEmpty {
-				if _, err1 := writer.Write(line); err1 != nil {
-					return err1
-				}
-			}
 			// fmt.Printf("Sent line to writer:'%s'\n", string(line))
 			//writer.Write([]byte(line))
 			if err != nil {
@@ -529,6 +522,12 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err os
 				}
 				return err
 			}
+
+			// if _, err1 := fmt.Fprint(writer, line); err1 != nil {
+			if _, err1 := writer.Write(line); err1 != nil {
+				return err1
+			}
+
 		}
 		return nil
 
@@ -628,14 +627,14 @@ func (ftp *FTP) StoreLines(cmd FtpCmd, reader io.Reader, remotename string, file
 		ftp.writeInfo("Try and write lines via connection for remote address:", conn.RemoteAddr().String())
 
 		//lineReader := bufio.NewReader(reader)
-		lineReader := &skipEmptyReader{r: bufio.NewReader(reader)}
+		lineReader := bufio.NewReader(reader)
 
 		var tot int64
 
 		for {
 			var n int
-			var eof, isEmpty bool
-			line, isEmpty, err := lineReader.readLine()
+			var eof bool
+			line, _, err := lineReader.ReadLine()
 			if err != nil {
 				eof = err == os.EOF
 				if !eof {
@@ -644,9 +643,8 @@ func (ftp *FTP) StoreLines(cmd FtpCmd, reader io.Reader, remotename string, file
 			}
 
 			// !Remember to convert to string (UTF-8 encoding)
-			if !isEmpty {
+			if !eof {
 				n, err = fmt.Fprintln(conn, string(line))
-
 				if err != nil {
 					return err
 				}
