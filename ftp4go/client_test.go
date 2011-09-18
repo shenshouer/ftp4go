@@ -72,6 +72,47 @@ func NewFtpConn(t *testing.T) (ftpClient *FTP, err os.Error) {
 	}
 
 	return
+}
+
+func TestServerAsciiMode(t *testing.T) {
+
+	ftpClient, err := NewFtpConn(t)
+	defer ftpClient.Quit()
+
+	if err != nil {
+		return
+	}
+
+	_, err = ftpClient.Cwd(pars.homefolder) // home
+	if err != nil {
+		t.Fatalf("error: ", err)
+	}
+
+	t_file := "test/test.txt"
+	r_filename := "remote_test.txt"
+	if err = ftpClient.UploadFile(r_filename, t_file, true, nil); err != nil {
+		t.Fatalf("error: ", err)
+	}
+
+	t.Logf("Uploaded %s file in ASCII mode.\n", t_file)
+
+	check := func(remotename string, localpath string, istext bool) {
+		s1, s2, tempFilePath := checkintegrityWithPaths(ftpClient, remotename, localpath, istext, false, t)
+		//defer os.Remove(tempFilePath)
+		t.Logf("\n---Check results\nMode is text: %v.\nDownloaded %s file to local file%s.\n", istext, remotename, tempFilePath)
+
+		if s1 != s2 {
+			t.Logf("The size of real file %s and the downloaded copy %s differ, size local: %d, size remote: %d\n", localpath, remotename, s1, s2)
+		} else {
+			t.Logf("The size of real file %s and the downloaded copy %s are the same, size: %d\n", localpath, remotename, s1)
+		}
+	}
+
+	fstochk := map[string]string{r_filename: t_file}
+	for s, l_name := range fstochk {
+		check(s, l_name, true)
+		//check(s, l_name, false)
+	}
 
 }
 
@@ -136,33 +177,20 @@ func TestFeatures(t *testing.T) {
 	t.Logf("Uploaded %d files.\n", n)
 
 	t.Log("Checking download integrity by downloading the uploaded files and comparing the sizes")
-	ftpClient.Cwd(homefolder)
 
-	checkintegrity := func(fi string, istext bool) {
-		t.Logf("Checking download integrity of file %s\n", fi)
-		tkns := strings.Split(fi, "/")
-		ficp := "ftptest_" + tkns[len(tkns)-1]
-		err = ftpClient.DownloadFile(fi, ficp, istext)
-		if err != nil {
-			t.Fatalf("Error downloading file %s, error: %s", fi, err)
-		}
-		defer os.Remove(ficp)
-		ofi, _ := os.Open(fi)
-		defer ofi.Close()
-		oficp, _ := os.Open(ficp)
-		defer oficp.Close()
+	check := func(fi string, istext bool) {
+		s1, s2 := checkintegrity(ftpClient, fi, istext, t)
 
-		s1, _ := ofi.Stat()
-		s2, _ := oficp.Stat()
-
-		if s1.Size != s2.Size {
-			t.Errorf("The size of real file %s and the downloaded copy %s differ, size local: %d, size remote: %d", fi, ficp, s1.Size, s2.Size)
+		if s1 != s2 {
+			t.Errorf("The size of real file %s and the downloaded copy differ, size local: %d, size remote: %d", fi, s1, s2)
 		}
 	}
 
+	ftpClient.Cwd(homefolder)
+
 	fstochk := map[string]bool{"test/test.txt": true, "test/test.jpg": false}
 	for s, v := range fstochk {
-		checkintegrity(s, v)
+		check(s, v)
 	}
 
 }
@@ -293,6 +321,48 @@ func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *test
 	}
 
 	return
+}
+
+func checkintegrity(ftpClient *FTP, remotename string, istext bool, t *testing.T) (sizeOriginal int64, sizeOnServer int64) {
+	sizeOriginal, sizeOnServer, _ = checkintegrityWithPaths(ftpClient, remotename, remotename, istext, true, t)
+	return
+}
+
+func checkintegrityWithPaths(ftpClient *FTP, remotename string, localpath string, istext bool, deleteTemporaryFile bool, t *testing.T) (sizeOriginal int64, sizeOnServer int64, tempFilePath string) {
+	t.Logf("Checking download integrity of remote file %s\n", remotename)
+	tkns := strings.Split(localpath, "/")
+	tempFilePath = "ftptest_" + tkns[len(tkns)-1]
+
+	fmt.Printf("Downloading file %s to temporary file %s\n", remotename, tempFilePath)
+	err := ftpClient.DownloadFile(remotename, tempFilePath, istext)
+	if err != nil {
+		t.Fatalf("Error downloading file %s, error: %s", remotename, err)
+	}
+
+	// delete if required
+	if deleteTemporaryFile {
+		defer os.Remove(tempFilePath)
+	}
+
+	var ofi, oficp *os.File
+	var e os.Error
+
+	if ofi, e = os.Open(localpath); e != nil {
+		t.Fatalf("Error opening file %s, error: %s", localpath, e)
+	}
+	defer ofi.Close()
+
+	if oficp, e = os.Open(tempFilePath); e != nil {
+		t.Fatalf("Error opening file %s, error: %s", oficp, e)
+	}
+
+	defer oficp.Close()
+
+	s1, _ := ofi.Stat()
+	s2, _ := oficp.Stat()
+
+	return s1.Size, s2.Size, tempFilePath
+
 }
 
 func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan bool) {

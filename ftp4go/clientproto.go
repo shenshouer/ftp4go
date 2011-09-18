@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"net"
 	"fmt"
+	//"net/textproto"
 )
 
 const (
@@ -39,14 +40,24 @@ func (sw *stringSliceWriter) Write(p []byte) (n int, err os.Error) {
 
 // string writer
 type textFileWriter struct {
-	f *os.File
+	//file *os.File
+	bw *bufio.Writer
+}
+
+func newTextFileWriter(f *os.File) *textFileWriter {
+	return &textFileWriter{bufio.NewWriter(f)}
 }
 
 // utility string writer
 func (tfw *textFileWriter) Write(p []byte) (n int, err os.Error) {
-	//add carriage return
-	//return tfw.f.WriteString(string(p) + "\n")
-	return fmt.Fprintln(tfw.f, string(p))
+	//return fmt.Fprintln(tfw.f, string(p))
+	n, err = tfw.bw.Write(p)
+	if err != nil {
+		return
+	}
+
+	tfw.bw.WriteByte('\n') // always add a new line
+	return n + 1, err
 }
 
 type CallbackInfo struct {
@@ -64,12 +75,6 @@ type Response struct {
 	Stream  []byte
 }
 
-// A Reader implements convenience methods for reading requests
-// or responses from a text protocol network connection.
-type FtpReader struct {
-	R *bufio.Reader
-}
-
 var re227, re150 *regexp.Regexp
 
 func init() {
@@ -77,17 +82,81 @@ func init() {
 	re150, _ = regexp.Compile("150 .* \\(([0-9]+) bytes\\)")
 }
 
+type skipEmptyReader struct {
+	r *bufio.Reader
+}
+
+// readLine returns one line from the server stripping CRLF.
+// If a line has zero length it sets the flag isEmpty.
+// Return an error if the connection fails.
+// 
+// NOTE:
+// the encoding is always unicode.
+func (reader *skipEmptyReader) readLine() (line []byte, isEmpty bool, err os.Error) {
+
+	line, err = reader.r.ReadSlice('\n')
+	// Important: return nil if there is nothing, different to the standard implementation
+	isEmpty = len(line) == 0
+	// fmt.Println("FtpReader, the line is empty:", isEmpty)
+
+	if isEmpty {
+		fmt.Println("FtpReader, the line is empty, the error was:", err)
+		return nil, true, err
+	}
+
+	if err == bufio.ErrBufferFull {
+		return line, false, nil
+	}
+
+	err = nil
+
+	if line[len(line)-1] == '\n' {
+		line = line[:len(line)-1]
+	}
+	if len(line) > 0 && line[len(line)-1] == '\r' {
+		line = line[:len(line)-1]
+	}
+	return line, isEmpty, err
+
+	/*
+		l, _, err := reader.R.ReadLine() //reader.Pr.ReadLineBytes() 
+
+		return l, err
+	*/
+}
+
+func newSkipEmptyReader(conn net.Conn) (r *skipEmptyReader) {
+	r = &skipEmptyReader{r: bufio.NewReader(conn)}
+	return
+}
+
+// A Reader implements convenience methods for reading requests
+// or responses from a text protocol network connection.
+type FtpReader struct {
+	r *skipEmptyReader
+	//Pr *textproto.Reader
+}
+
+func (reader *FtpReader) readLine() (line []byte, isEmpty bool, err os.Error) {
+	return reader.r.readLine()
+}
+
 // NewReader returns a new Reader reading from r.
-func NewFtpReader(conn net.Conn) *FtpReader {
-	return &FtpReader{R: bufio.NewReader(conn)}
+func NewFtpReader(conn net.Conn) (fr *FtpReader) {
+	fr = &FtpReader{r: newSkipEmptyReader(conn)}
+	//fr.Pr = textproto.NewReader(fr.R) 
+	return
 }
 
 // readMultiLine gets a response which may possibly consist of multiple lines. 
 // Return a single string with no trailing CRLF. If the response consists of multiple
 // lines these are separated by "\n" characters in the string.
 func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
-	var line string
-	if line, err = reader.readLine(); err != nil {
+	var l []byte
+	//var isEmpty bool
+	l, _, err = reader.readLine()
+	line := string(l)
+	if err != nil {
 		if err != os.EOF {
 			return line, err
 		}
@@ -95,8 +164,9 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 
 	if line[3:4] == "-" {
 		for code := line[:3]; ; {
-			var nextline string
-			if nextline, err = reader.readLine(); err != nil {
+			l, _, err = reader.readLine()
+			nextline := string(l)
+			if err != nil {
 				if err != os.EOF {
 					return line, err
 				}
@@ -111,16 +181,6 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 		}
 	}
 	return line, nil
-}
-
-// readLine returns one line from the server stripping CRLF.
-// Return an error if the connection fails.
-// 
-// NOTE:
-// the encoding is always unicode.
-func (reader *FtpReader) readLine() (line string, err os.Error) {
-	l, _, err := reader.R.ReadLine()
-	return string(l), err
 }
 
 // SendAndRead sends a command to the server and reads the response.
