@@ -96,8 +96,7 @@ type FTP struct {
 	logger        *log.Logger
 	timeoutInMsec int64
 	conn          net.Conn
-	//textprotoConn     *textproto.Conn
-	encoding string
+	encoding      string
 }
 
 type NameFactsLine struct {
@@ -136,6 +135,7 @@ func (ftp *FTP) writeInfo(params ...interface{}) {
 }
 
 // NewFTP creates a new FTP client using a debug level, default is 0, which is disabled.
+// The FTP server uses the passive tranfer mode by default.
 // 
 // 	Debuglevel:
 // 		0 -> disabled
@@ -148,7 +148,7 @@ func NewFTP(debuglevel int) *FTP {
 		Port:          DefaultFtpPort,
 		logger:        syslog.NewLogger(syslog.LOG_ERR, 999),
 		timeoutInMsec: DefaultTimeoutInMsec,
-		encoding:      "latin1",
+		passiveserver: true,
 	}
 	return ftp
 }
