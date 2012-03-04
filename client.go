@@ -106,8 +106,8 @@ type NameFactsLine struct {
 	Facts map[string]string
 }
 
-func getTimeoutInMsec(msec int) time.Time {
-	return time.Now().Add(100 * time.Millisecond)
+func getTimeoutInMsec(msec int64) time.Time {
+	return time.Now().Add(time.Duration(msec) * time.Millisecond)
 }
 
 func (i FtpCmd) String() string {

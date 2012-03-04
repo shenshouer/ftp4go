@@ -298,13 +298,13 @@ func parse211(resp *Response) (list []string, err error) {
 	r := bufio.NewReader(strings.NewReader(resp.Message))
 
 	for {
-		line, _, err := r.ReadLine()
+		line, _, err1 := r.ReadLine()
 
-		if err != nil {
-			if err == io.EOF {
+		if err1 != nil {
+			if err1 == io.EOF {
 				break
 			}
-			return
+			return list, err1
 		}
 
 		l := strings.TrimSpace(string(line))
