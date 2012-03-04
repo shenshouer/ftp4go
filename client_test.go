@@ -1,11 +1,12 @@
 package ftp4go
 
 import (
-	"testing"
-	"os"
-	"strings"
-	"path/filepath"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
 	"time"
 )
 
@@ -25,7 +26,7 @@ var allpars = []*connPars{
 
 var pars = allpars[0]
 
-func askParameter(question string, defaultValue string) (inputValue string, err os.Error) {
+func askParameter(question string, defaultValue string) (inputValue string, err error) {
 	fmt.Print(question)
 	//originalStdout := os.Stdout
 	//os.Stdout, _ = os.OpenFile(os.DevNull, os.O_RDONLY, 0)
@@ -37,7 +38,7 @@ func askParameter(question string, defaultValue string) (inputValue string, err 
 		fmt.Print(os.Stderr, "Error reading parameter. Error: ", er)
 		os.Exit(1)
 	case nr == 0: //EOF
-		inputValue, err = defaultValue, os.NewError("Invalid parameter")
+		inputValue, err = defaultValue, errors.New("Invalid parameter")
 	case nr > 0:
 		inputValue, err = strings.TrimSpace(string(buf[0:nr])), nil
 		if len(inputValue) == 0 {
@@ -48,7 +49,7 @@ func askParameter(question string, defaultValue string) (inputValue string, err 
 	return inputValue, err
 }
 
-func NewFtpConn(t *testing.T) (ftpClient *FTP, err os.Error) {
+func NewFtpConn(t *testing.T) (ftpClient *FTP, err error) {
 
 	var logl int
 	if pars.debugFtp {
@@ -62,13 +63,13 @@ func NewFtpConn(t *testing.T) (ftpClient *FTP, err os.Error) {
 	// connect
 	_, err = ftpClient.Connect(pars.ftpAddress, pars.ftpPort)
 	if err != nil {
-		t.Fatalf("The FTP connection could not be established, error: ", err.String())
+		t.Fatalf("The FTP connection could not be established, error: ", err.Error())
 	}
 
 	t.Logf("Connecting with username: %s and password %s", pars.username, pars.password)
 	_, err = ftpClient.Login(pars.username, pars.password, "")
 	if err != nil {
-		t.Fatalf("The user could not be logged in, error: %s", err.String())
+		t.Fatalf("The user could not be logged in, error: %s", err.Error())
 	}
 
 	return
@@ -176,7 +177,7 @@ func TestFeatures(t *testing.T) {
 	t.Log("Testings Mlsd")
 	ls, err := ftpClient.Mlsd(".", []string{"type", "size"})
 	if err != nil {
-		t.Logf("The ftp command MLSD does not work or is not supported, error: %s", err.String())
+		t.Logf("The ftp command MLSD does not work or is not supported, error: %s", err.Error())
 	} else {
 		for _, l := range ls {
 			//t.Logf("\nMlsd entry: %s, facts: %v", l.Name, l.Facts)
@@ -189,7 +190,7 @@ func TestFeatures(t *testing.T) {
 	maxSimultaneousConns := 1
 
 	t.Log("Cleaning up before testing")
-	var cleanup = func() os.Error { return cleanupFolderTree(ftpClient, test_f, homefolder, t) }
+	var cleanup = func() error { return cleanupFolderTree(ftpClient, test_f, homefolder, t) }
 	cleanup()
 	defer cleanup() // at the end again
 
@@ -237,9 +238,9 @@ func _TestRecursion(t *testing.T) {
 
 	t.Log("Cleaning up before testing")
 
-	var cleanup = func() os.Error { return cleanupFolderTree(ftpClient, test_f, homefolder, t) }
+	var cleanup = func() error { return cleanupFolderTree(ftpClient, test_f, homefolder, t) }
 
-	var check = func(f string) os.Error { return checkFolder(ftpClient, f, homefolder, t) }
+	var check = func(f string) error { return checkFolder(ftpClient, f, homefolder, t) }
 
 	defer cleanup() // at the end again
 
@@ -277,12 +278,11 @@ func _TestRecursion(t *testing.T) {
 
 // FTP routine utils
 
-
-func checkFolder(ftpClient *FTP, f string, homefolder string, t *testing.T) (err os.Error) {
+func checkFolder(ftpClient *FTP, f string, homefolder string, t *testing.T) (err error) {
 
 	_, err = ftpClient.Cwd(homefolder)
 	if err != nil {
-		t.Fatalf("Error in Cwd for folder %s:", homefolder, err.String())
+		t.Fatalf("Error in Cwd for folder %s:", homefolder, err.Error())
 	}
 
 	defer ftpClient.Cwd(homefolder) //back to home at the end
@@ -310,7 +310,7 @@ func checkFolder(ftpClient *FTP, f string, homefolder string, t *testing.T) (err
 	for _, locF := range files {
 		t.Logf("Checking local file or folder %s", locF)
 		fi, err := os.Stat(locF)
-		if err == nil && !fi.IsDirectory() {
+		if err == nil && !fi.IsDir() {
 			var found bool
 			for _, remF := range filelist {
 				if strings.Contains(strings.ToLower(remF), strings.ToLower(locF)) {
@@ -328,11 +328,11 @@ func checkFolder(ftpClient *FTP, f string, homefolder string, t *testing.T) (err
 
 }
 
-func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *testing.T) (err os.Error) {
+func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *testing.T) (err error) {
 
 	_, err = ftpClient.Cwd(homefolder)
 	if err != nil {
-		t.Fatalf("Error in Cwd for folder %s:", homefolder, err.String())
+		t.Fatalf("Error in Cwd for folder %s:", homefolder, err.Error())
 	}
 
 	defer ftpClient.Cwd(homefolder) //back to home at the end
@@ -341,7 +341,7 @@ func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *test
 
 	if err := ftpClient.RemoveRemoteDirTree(test_f); err != nil {
 		if err != DIRECTORY_NON_EXISTENT {
-			t.Fatalf("Error:", err.String())
+			t.Fatalf("Error:", err.Error())
 		}
 	}
 
@@ -370,7 +370,7 @@ func checkintegrityWithPaths(ftpClient *FTP, remotename string, localpath string
 	}
 
 	var ofi, oficp *os.File
-	var e os.Error
+	var e error
 
 	if ofi, e = os.Open(localpath); e != nil {
 		t.Fatalf("Error opening file %s, error: %s", localpath, e)
@@ -386,7 +386,7 @@ func checkintegrityWithPaths(ftpClient *FTP, remotename string, localpath string
 	s1, _ := ofi.Stat()
 	s2, _ := oficp.Stat()
 
-	return s1.Size, s2.Size, tempFilePath
+	return s1.Size(), s2.Size(), tempFilePath
 
 }
 
@@ -409,8 +409,8 @@ func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan b
 					if !ok {
 						fi, _ := os.Stat(st.Filename)
 
-						files[st.Resourcename] = [2]int64{fi.Size, pos}
-						size = fi.Size
+						files[st.Resourcename] = [2]int64{fi.Size(), pos}
+						size = fi.Size()
 					} else {
 						pos = pair[1] // position correctly for writing
 						size = pair[0]

@@ -2,12 +2,14 @@ package ftp4go
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
-	"regexp"
-	"net"
-	"fmt"
 )
 
 const (
@@ -15,10 +17,10 @@ const (
 )
 
 var (
-	NewErrReply = func(error os.Error) os.Error { return os.NewError("Reply error: " + error.String()) }
-	NewErrTemp  = func(error os.Error) os.Error { return os.NewError("Temporary error: " + error.String()) }
-	NewErrPerm  = func(error os.Error) os.Error { return os.NewError("Permanent error: " + error.String()) }
-	NewErrProto = func(error os.Error) os.Error { return os.NewError("Protocol error: " + error.String()) }
+	NewErrReply = func(error error) error { return errors.New("Reply error: " + error.Error()) }
+	NewErrTemp  = func(error error) error { return errors.New("Temporary error: " + error.Error()) }
+	NewErrPerm  = func(error error) error { return errors.New("Permanent error: " + error.Error()) }
+	NewErrProto = func(error error) error { return errors.New("Protocol error: " + error.Error()) }
 )
 
 func getFirstChar(resp *Response) string {
@@ -31,7 +33,7 @@ type stringSliceWriter struct {
 }
 
 // utility string writer
-func (sw *stringSliceWriter) Write(p []byte) (n int, err os.Error) {
+func (sw *stringSliceWriter) Write(p []byte) (n int, err error) {
 	sw.s = append(sw.s, string(p))
 	n = len(sw.s)
 	return
@@ -48,7 +50,7 @@ func newTextFileWriter(f *os.File) *textFileWriter {
 }
 
 // utility string writer
-func (tfw *textFileWriter) Write(p []byte) (n int, err os.Error) {
+func (tfw *textFileWriter) Write(p []byte) (n int, err error) {
 	//return fmt.Fprintln(tfw.f, string(p))
 	n, err = tfw.bw.Write(p)
 	if err != nil {
@@ -89,7 +91,7 @@ type FtpReader struct {
 
 // readLine returns one line from the server stripping CRLF.
 // Return an error if the connection fails.
-func (reader *FtpReader) readLine() (line []byte, err os.Error) {
+func (reader *FtpReader) readLine() (line []byte, err error) {
 	l, _, err := reader.r.ReadLine()
 	return l, err
 }
@@ -103,13 +105,13 @@ func NewFtpReader(conn net.Conn) (fr *FtpReader) {
 // readMultiLine gets a response which may possibly consist of multiple lines. 
 // Return a single string with no trailing CRLF. If the response consists of multiple
 // lines these are separated by "\n" characters in the string.
-func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
+func (reader *FtpReader) readMultiLine() (text string, err error) {
 	var l []byte
 	//var isEmpty bool
 	l, err = reader.readLine()
 	line := string(l)
 	if err != nil {
-		if err != os.EOF {
+		if err != io.EOF {
 			return line, err
 		}
 	}
@@ -119,7 +121,7 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 			l, err = reader.readLine()
 			nextline := string(l)
 			if err != nil {
-				if err != os.EOF {
+				if err != io.EOF {
 					return line, err
 				}
 			}
@@ -127,7 +129,7 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 			if nextline[:3] == code && nextline[3:4] != "-" {
 				break
 			}
-			if err == os.EOF {
+			if err == io.EOF {
 				break
 			}
 		}
@@ -136,7 +138,7 @@ func (reader *FtpReader) readMultiLine() (text string, err os.Error) {
 }
 
 // SendAndRead sends a command to the server and reads the response.
-func (ftp *FTP) SendAndRead(cmd FtpCmd, params ...string) (response *Response, err os.Error) {
+func (ftp *FTP) SendAndRead(cmd FtpCmd, params ...string) (response *Response, err error) {
 	if err = ftp.Send(cmd, params...); err != nil {
 		return nil, err
 	}
@@ -144,7 +146,7 @@ func (ftp *FTP) SendAndRead(cmd FtpCmd, params ...string) (response *Response, e
 }
 
 // SendAndReadEmpty sends a command to the server and reads the response accepting only "empty" responses.
-func (ftp *FTP) SendAndReadEmpty(cmd FtpCmd, params ...string) (response *Response, err os.Error) {
+func (ftp *FTP) SendAndReadEmpty(cmd FtpCmd, params ...string) (response *Response, err error) {
 	if err = ftp.Send(cmd, params...); err != nil {
 		return
 	}
@@ -152,7 +154,7 @@ func (ftp *FTP) SendAndReadEmpty(cmd FtpCmd, params ...string) (response *Respon
 }
 
 // Send sends a command to the server.
-func (ftp *FTP) Send(cmd FtpCmd, params ...string) (err os.Error) {
+func (ftp *FTP) Send(cmd FtpCmd, params ...string) (err error) {
 	fullCmd := cmd.String()
 	ftp.writeInfo(fmt.Sprintf("Sending to server partial command '%s'", fullCmd))
 	if len(params) > 0 {
@@ -168,7 +170,7 @@ func (ftp *FTP) Send(cmd FtpCmd, params ...string) (err os.Error) {
 
 // ReadEmpty reads the response along with the response code from the server and 
 // expects a response beginning with code "2". It returns an error otherwise.
-func (ftp *FTP) ReadEmpty(cmd FtpCmd) (resp *Response, err os.Error) {
+func (ftp *FTP) ReadEmpty(cmd FtpCmd) (resp *Response, err error) {
 
 	resp, err = ftp.Read(cmd)
 
@@ -177,7 +179,7 @@ func (ftp *FTP) ReadEmpty(cmd FtpCmd) (resp *Response, err os.Error) {
 	}
 
 	if c := resp.Message[:1]; c != "2" {
-		err = NewErrReply(os.NewError(resp.Message))
+		err = NewErrReply(errors.New(resp.Message))
 		resp = nil
 	}
 	return
@@ -185,7 +187,7 @@ func (ftp *FTP) ReadEmpty(cmd FtpCmd) (resp *Response, err os.Error) {
 }
 
 // Read reads the response along with the response code from the server
-func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err os.Error) {
+func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err error) {
 
 	reader := NewFtpReader(ftp.conn)
 
@@ -204,11 +206,11 @@ func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err os.Error) {
 		return &Response{Code: code, Message: msg}, nil
 	//wrong
 	case c == "4":
-		err = os.NewError("Temporary error: " + msg)
+		err = errors.New("Temporary error: " + msg)
 	case c == "5":
-		err = os.NewError("Permanent error: " + msg)
+		err = errors.New("Permanent error: " + msg)
 	default:
-		err = os.NewError("Protocol error: " + msg)
+		err = errors.New("Protocol error: " + msg)
 	}
 
 	return nil, err
@@ -217,15 +219,15 @@ func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err os.Error) {
 // parse227 parses the 227 response for PASV request.
 // Raises a protocol error if it does not contain {h1,h2,h3,h4,p1,p2}.
 // Returns the host and port.
-func parse227(resp *Response) (host string, port int, err os.Error) {
+func parse227(resp *Response) (host string, port int, err error) {
 	if resp.Code != 227 {
-		err = NewErrProto(os.NewError(resp.Message))
+		err = NewErrProto(errors.New(resp.Message))
 		return
 	}
 
 	matches := re227.FindStringSubmatch(resp.Message)
 	if matches == nil {
-		err = NewErrProto(os.NewError("No matching pattern for message:" + resp.Message))
+		err = NewErrProto(errors.New("No matching pattern for message:" + resp.Message))
 		return
 	}
 	numbers := matches[1:] // get the groups
@@ -239,9 +241,9 @@ func parse227(resp *Response) (host string, port int, err os.Error) {
 // parse150ForSize parses the '150' response for a RETR request.
 // Returns the expected transfer size or None; size is not guaranteed to
 // be present in the 150 message.
-func parse150ForSize(resp *Response) (int, os.Error) {
+func parse150ForSize(resp *Response) (int, error) {
 	if resp.Code != 150 {
-		return -1, NewErrReply(os.NewError(resp.Message))
+		return -1, NewErrReply(errors.New(resp.Message))
 	}
 
 	matches := re150.FindStringSubmatch(resp.Message)
@@ -257,9 +259,9 @@ func parse150ForSize(resp *Response) (int, os.Error) {
 
 // parse257 parses the 257 response for a MKD or PWD request, the response is a directory name.
 // Return the directory name in the 257 reply.
-func parse257(resp *Response) (dirname string, err os.Error) {
+func parse257(resp *Response) (dirname string, err error) {
 	if resp.Code != 257 {
-		err = NewErrProto(os.NewError(resp.Message))
+		err = NewErrProto(errors.New(resp.Message))
 		return "", err
 	}
 	if resp.Message[3:5] != " \"" {
@@ -284,9 +286,9 @@ func parse257(resp *Response) (dirname string, err os.Error) {
 
 // parse211 parses the 211 response for a FEAT command.
 // Return the list of feats.
-func parse211(resp *Response) (list []string, err os.Error) {
+func parse211(resp *Response) (list []string, err error) {
 	if resp.Code != 211 {
-		err = NewErrProto(os.NewError(resp.Message))
+		err = NewErrProto(errors.New(resp.Message))
 		return nil, err
 	}
 
@@ -299,7 +301,7 @@ func parse211(resp *Response) (list []string, err os.Error) {
 		line, _, err := r.ReadLine()
 
 		if err != nil {
-			if err == os.EOF {
+			if err == io.EOF {
 				break
 			}
 			return

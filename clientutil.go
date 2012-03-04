@@ -2,18 +2,19 @@
 package ftp4go
 
 import (
+	"errors"
+	"fmt"
 	"os"
-	"strings"
 	"path/filepath"
 	"sort"
-	"fmt"
+	"strings"
 )
 
-var DIRECTORY_NON_EXISTENT = os.NewError("The folder does not exist and can not be removed")
+var DIRECTORY_NON_EXISTENT = errors.New("The folder does not exist and can not be removed")
 
 // RemoveRemoteDirTree removes a remote folder and all of its subfolders recursively.
 // The current directory is then set to the orginal one before the operation or to the root of the deleted folder if it fails.
-func (ftp *FTP) RemoveRemoteDirTree(remoteDir string) (err os.Error) {
+func (ftp *FTP) RemoveRemoteDirTree(remoteDir string) (err error) {
 
 	var pwd string
 	if pwd, err = ftp.Pwd(); err != nil {
@@ -28,7 +29,7 @@ func (ftp *FTP) RemoveRemoteDirTree(remoteDir string) (err os.Error) {
 
 // removeRemoteDirTree removes a remote folder and all of its subfolders recursively.
 // The error DIRECTORY_NON_EXISTENT of type os.Error is thrown if the FTP folder does not exist.
-func (ftp *FTP) removeRemoteDirTree(remoteDir string) (err os.Error) {
+func (ftp *FTP) removeRemoteDirTree(remoteDir string) (err error) {
 	ftp.writeInfo("Changing working remote dir to:", remoteDir)
 
 	if _, err = ftp.Cwd(remoteDir); err != nil {
@@ -74,11 +75,11 @@ func (ftp *FTP) removeRemoteDirTree(remoteDir string) (err os.Error) {
 // Returns the number of files uploaded and an error if any.
 //
 // The current workding directory is set back to the initial value at the end.
-func (ftp *FTP) UploadDirTree(localDir string, remoteRootDir string, maxSimultaneousConns int, excludedDirs []string, callback Callback) (n int, err os.Error) {
+func (ftp *FTP) UploadDirTree(localDir string, remoteRootDir string, maxSimultaneousConns int, excludedDirs []string, callback Callback) (n int, err error) {
 	//print("Uploading tree:", localDir, "\n")
 
 	if len(remoteRootDir) == 0 {
-		return n, os.NewError("A valid remote root folder with write permission needs specifying.")
+		return n, errors.New("A valid remote root folder with write permission needs specifying.")
 	}
 
 	var pwd string
@@ -110,7 +111,7 @@ func (ftp *FTP) UploadDirTree(localDir string, remoteRootDir string, maxSimultan
 	return n, err
 }
 
-func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, callback Callback, n *int) (err os.Error) {
+func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, callback Callback, n *int) (err error) {
 
 	_, dir := filepath.Split(localDir)
 	ftp.writeInfo("The directory where to upload is:", dir)
@@ -138,11 +139,11 @@ func (ftp *FTP) uploadDirTree(localDir string, excludedDirs sort.StringSlice, ca
 		_, fname := filepath.Split(s) // find file name
 		localPath := filepath.Join(localDir, fname)
 		ftp.writeInfo("Uploading file or dir:", localPath)
-		var f *os.FileInfo
+		var f os.FileInfo
 		if f, err = os.Stat(localPath); err != nil {
 			return
 		}
-		if !f.IsDirectory() {
+		if !f.IsDir() {
 			err = ftp.UploadFile(fname, localPath, false, callback) // always binary upload
 			if err != nil {
 				return
