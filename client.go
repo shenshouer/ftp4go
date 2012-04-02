@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/syslog"
+	//"log/syslog"
 	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
+
 
 // The default constants
 const (
@@ -149,7 +150,7 @@ func (ftp *FTP) writeInfo(params ...interface{}) {
 // 		2 -> verbose
 //
 func NewFTP(debuglevel int) *FTP {
-	logger, _ := syslog.NewLogger(syslog.LOG_ERR, 999)
+	logger := log.New(os.Stdout, "", log.LstdFlags) //syslog.NewLogger(syslog.LOG_ERR, 999)
 	ftp := &FTP{
 		debugging:     debuglevel,
 		Port:          DefaultFtpPort,
