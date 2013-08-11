@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/textproto"
 	//"log/syslog"
 	"net"
 	"os"
@@ -97,7 +98,8 @@ type FTP struct {
 	passiveserver bool
 	logger        *log.Logger
 	timeoutInMsec int64
-	conn          *Conn
+	textprotoConn *textproto.Conn
+	conn          net.Conn
 	encoding      string
 }
 
@@ -174,28 +176,21 @@ func (ftp *FTP) Connect(host string, port int) (resp *Response, err error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", ftp.Host, ftp.Port)
+	err = ftp.NewConn(addr)
+	if err != nil {
+		return
+	}
+
 	ftp.writeInfo("host:", ftp.Host, " port:", strconv.Itoa(ftp.Port))
 
-	ftp.conn, err = Dial("tcp", addr)
-
-	/*
-		if err != nil {
-			return nil, err
-		}
-		// wrap the tpc connection
-		ftp.textprotoConn = textproto.NewConn(ftp.tcpConn)
-	*/
-
-	if err != nil {
-		return nil, err
-	}
-	ftp.conn.conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
+	// NOTE: this is an absolute time that needs refreshing after each READ/WRITE net operation
+	//ftp.conn.conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 
 	if resp, err = ftp.Read(NONE_FTP_CMD); err != nil {
 		return
 	}
 	ftp.welcome = resp.Message
-	ftp.writeInfo("Successfully connected on local address:", ftp.conn.conn.LocalAddr())
+	ftp.writeInfo("Successfully connected on local address:", ftp.conn.LocalAddr())
 	return
 }
 
@@ -520,7 +515,7 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err er
 		}
 		defer conn.Close() // close the connection on exit
 
-		ftpReader := NewConn(conn)
+		ftpReader := textproto.NewConn(conn)
 		ftp.writeInfo("Try and get lines via connection for remote address:", conn.RemoteAddr().String())
 
 		for {
@@ -768,7 +763,7 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 			return
 		}
 
-		conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
+		//conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 
 	} else {
 		if listener, err = ftp.makePort(); err != nil {
@@ -807,7 +802,7 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 		}
 		ftp.writeInfo("Trying to communicate with local host: ", conn.LocalAddr())
 		defer listener.Close() // close after getting the connection
-		conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
+		//conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 	}
 
 	if resp.Code == 150 {
@@ -821,7 +816,7 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 // makePort creates a new communication port and return a listener for this.
 func (ftp *FTP) makePort() (listener net.Listener, err error) {
 
-	tcpAddr := ftp.conn.conn.LocalAddr()
+	tcpAddr := ftp.conn.LocalAddr()
 	ad := tcpAddr.String()
 	network := tcpAddr.Network()
 

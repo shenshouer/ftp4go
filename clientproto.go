@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	//"net/textproto"
+	"net/textproto"
 	"os"
 	"regexp"
 	"strconv"
@@ -84,40 +84,28 @@ func init() {
 	re150, _ = regexp.Compile("150 .* \\(([0-9]+) bytes\\)")
 }
 
-// A Conn represents a textual network protocol connection.
-// It consists of a Reader and Writer to manage I/O
-// and a Pipeline to sequence concurrent requests on the connection.
-// These embedded types carry methods with them;
-// see the documentation of those types for details.
-type Conn struct {
-	Reader
-	Writer
-	//Pipeline
-	conn net.Conn
-}
-
-// NewConn returns a new Conn using conn for I/O.
-func NewConn(conn net.Conn) *Conn {
-	return &Conn{
-		Reader: Reader{R: bufio.NewReader(conn)},
-		Writer: Writer{W: bufio.NewWriter(conn)},
-		conn:   conn,
-	}
-}
-
-// Close closes the connection.
-func (c *Conn) Close() error {
-	return c.conn.Close()
-}
-
 // Dial connects to the given address on the given network using net.Dial
 // and then returns a new Conn for the connection.
-func Dial(network, addr string) (*Conn, error) {
+func Dial(network, addr string) (net.Conn, error) {
 	c, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
 	}
-	return NewConn(c), nil
+	return c, nil
+}
+
+func (ftp *FTP) NewConn(addr string) error {
+
+	c, err := Dial("tcp", addr)
+
+	if err != nil {
+		return err
+	}
+
+	// use textproto for parsing
+	ftp.conn = c
+	ftp.textprotoConn = textproto.NewConn(c)
+	return nil
 }
 
 // SendAndRead sends a command to the server and reads the response.
@@ -138,7 +126,7 @@ func (ftp *FTP) Send(cmd FtpCmd, params ...string) (err error) {
 
 	ftp.writeInfo(fmt.Sprintf("Sending to server command '%s'", fullCmd))
 	//_, err = ftp.textprotoConn.Cmd(fullCmd)
-	err = ftp.conn.PrintfLine(fullCmd)
+	err = ftp.textprotoConn.PrintfLine(fullCmd)
 
 	return
 }
@@ -149,7 +137,7 @@ func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err error) {
 	var msg string
 	var code int
 
-	if code, msg, err = ftp.conn.ReadResponse(-1); err != nil {
+	if code, msg, err = ftp.textprotoConn.ReadResponse(-1); err != nil {
 		return nil, err
 	}
 
