@@ -20,7 +20,7 @@ type connPars struct {
 }
 
 var allpars = []*connPars{
-	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: false},
+	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: true},
 	&connPars{ftpAddress: "ftp.fileserve.com", ftpPort: 21, username: "ftp4go", password: "52fe56bc", homefolder: "/", debugFtp: true},
 }
 
@@ -63,7 +63,7 @@ func NewFtpConn(t *testing.T) (ftpClient *FTP, err error) {
 	// connect
 	_, err = ftpClient.Connect(pars.ftpAddress, pars.ftpPort)
 	if err != nil {
-		t.Fatalf("The FTP connection could not be established, error: ", err.Error())
+		t.Fatalf("The FTP connection could not be established, error: %v", err.Error())
 	}
 
 	t.Logf("Connecting with username: %s and password %s", pars.username, pars.password)
@@ -80,7 +80,7 @@ type asciiTestSet struct {
 	isascii bool
 }
 
-func TestServerAsciiMode(t *testing.T) {
+func _TestServerAsciiMode(t *testing.T) {
 
 	ftpClient, err := NewFtpConn(t)
 	defer ftpClient.Quit()
@@ -164,14 +164,23 @@ func TestFeatures(t *testing.T) {
 		fmt.Printf("%s\n", ft)
 	}
 
-	//var resp *Response
+	fmt.Printf("Use UTF8\n")
+	_, err = ftpClient.Opts("UTF8 ON")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	var cwd string
+
 	_, err = ftpClient.Cwd(homefolder) // home
 	if err != nil {
-		t.Fatalf("error: ", err)
+		t.Fatalf("error: %v", err)
 	}
 
 	cwd, err = ftpClient.Pwd()
+	if err != nil {
+		t.Fatalf("error: ", err)
+	}
 	t.Log("The current folder is", cwd)
 
 	t.Log("Testings Mlsd")
@@ -247,7 +256,7 @@ func _TestRecursion(t *testing.T) {
 	stats, fileUploaded, _ := startStats()
 	var collector = func(info *CallbackInfo) {
 		if info.Eof {
-			stats <- info // pipe in for stats	
+			stats <- info // pipe in for stats
 		}
 	} // do not block the call
 
@@ -425,7 +434,7 @@ func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan b
 						fmt.Print(msg)
 					}
 					/*
-						if size <= st.BytesTransmitted {	
+						if size <= st.BytesTransmitted {
 							fileUploaded <- true // done here
 						}
 					*/

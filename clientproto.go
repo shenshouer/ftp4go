@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	//"net/textproto"
 	"os"
 	"regexp"
 	"strconv"
@@ -24,7 +25,7 @@ var (
 )
 
 func getFirstChar(resp *Response) string {
-	return string(resp.Message[0])
+	return strconv.Itoa(resp.Code)[0:1]
 }
 
 // string writer
@@ -83,58 +84,40 @@ func init() {
 	re150, _ = regexp.Compile("150 .* \\(([0-9]+) bytes\\)")
 }
 
-// A Reader implements convenience methods for reading requests
-// or responses from a text protocol network connection.
-type FtpReader struct {
-	r *bufio.Reader
+// A Conn represents a textual network protocol connection.
+// It consists of a Reader and Writer to manage I/O
+// and a Pipeline to sequence concurrent requests on the connection.
+// These embedded types carry methods with them;
+// see the documentation of those types for details.
+type Conn struct {
+	Reader
+	Writer
+	//Pipeline
+	conn net.Conn
 }
 
-// readLine returns one line from the server stripping CRLF.
-// Return an error if the connection fails.
-func (reader *FtpReader) readLine() (line []byte, err error) {
-	l, _, err := reader.r.ReadLine()
-	return l, err
+// NewConn returns a new Conn using conn for I/O.
+func NewConn(conn net.Conn) *Conn {
+	return &Conn{
+		Reader: Reader{R: bufio.NewReader(conn)},
+		Writer: Writer{W: bufio.NewWriter(conn)},
+		conn:   conn,
+	}
 }
 
-// NewReader returns a new Reader reading from r.
-func NewFtpReader(conn net.Conn) (fr *FtpReader) {
-	fr = &FtpReader{r: bufio.NewReader(conn)}
-	return
+// Close closes the connection.
+func (c *Conn) Close() error {
+	return c.conn.Close()
 }
 
-// readMultiLine gets a response which may possibly consist of multiple lines. 
-// Return a single string with no trailing CRLF. If the response consists of multiple
-// lines these are separated by "\n" characters in the string.
-func (reader *FtpReader) readMultiLine() (text string, err error) {
-	var l []byte
-	//var isEmpty bool
-	l, err = reader.readLine()
-	line := string(l)
+// Dial connects to the given address on the given network using net.Dial
+// and then returns a new Conn for the connection.
+func Dial(network, addr string) (*Conn, error) {
+	c, err := net.Dial(network, addr)
 	if err != nil {
-		if err != io.EOF {
-			return line, err
-		}
+		return nil, err
 	}
-
-	if line[3:4] == "-" {
-		for code := line[:3]; ; {
-			l, err = reader.readLine()
-			nextline := string(l)
-			if err != nil {
-				if err != io.EOF {
-					return line, err
-				}
-			}
-			line = line + "\n" + nextline
-			if nextline[:3] == code && nextline[3:4] != "-" {
-				break
-			}
-			if err == io.EOF {
-				break
-			}
-		}
-	}
-	return line, nil
+	return NewConn(c), nil
 }
 
 // SendAndRead sends a command to the server and reads the response.
@@ -145,62 +128,36 @@ func (ftp *FTP) SendAndRead(cmd FtpCmd, params ...string) (response *Response, e
 	return ftp.Read(cmd)
 }
 
-// SendAndReadEmpty sends a command to the server and reads the response accepting only "empty" responses.
-func (ftp *FTP) SendAndReadEmpty(cmd FtpCmd, params ...string) (response *Response, err error) {
-	if err = ftp.Send(cmd, params...); err != nil {
-		return
-	}
-	return ftp.ReadEmpty(cmd)
-}
-
 // Send sends a command to the server.
 func (ftp *FTP) Send(cmd FtpCmd, params ...string) (err error) {
 	fullCmd := cmd.String()
-	ftp.writeInfo(fmt.Sprintf("Sending to server partial command '%s'", fullCmd))
+	//ftp.writeInfo(fmt.Sprintf("Sending to server partial command '%s'", fullCmd))
 	if len(params) > 0 {
 		fullCmd = cmd.AppendParameters(params...)
 	}
 
 	ftp.writeInfo(fmt.Sprintf("Sending to server command '%s'", fullCmd))
 	//_, err = ftp.textprotoConn.Cmd(fullCmd)
-	_, err = ftp.conn.Write([]byte(fullCmd + CRLF))
+	err = ftp.conn.PrintfLine(fullCmd)
 
 	return
-}
-
-// ReadEmpty reads the response along with the response code from the server and 
-// expects a response beginning with code "2". It returns an error otherwise.
-func (ftp *FTP) ReadEmpty(cmd FtpCmd) (resp *Response, err error) {
-
-	resp, err = ftp.Read(cmd)
-
-	if err != nil {
-		return
-	}
-
-	if c := resp.Message[:1]; c != "2" {
-		err = NewErrReply(errors.New(resp.Message))
-		resp = nil
-	}
-	return
-
 }
 
 // Read reads the response along with the response code from the server
 func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err error) {
 
-	reader := NewFtpReader(ftp.conn)
-
 	var msg string
-	if msg, err = reader.readMultiLine(); err != nil {
+	var code int
+
+	if code, msg, err = ftp.conn.ReadResponse(-1); err != nil {
 		return nil, err
 	}
 
-	ftp.writeInfo("The message returned by the server was:", msg)
+	ftp.writeInfo(fmt.Sprintf("The message returned by the server was: code=%d, message=%s", code, msg))
 
-	code, _ := strconv.Atoi(msg[:3])
+	c := strconv.Itoa(code)[0:1]
 
-	switch c := msg[:1]; true {
+	switch {
 	//valid
 	case strings.IndexAny(c, "123") >= 0:
 		return &Response{Code: code, Message: msg}, nil
@@ -213,6 +170,7 @@ func (ftp *FTP) Read(cmd FtpCmd) (resp *Response, err error) {
 		err = errors.New("Protocol error: " + msg)
 	}
 
+	ftp.writeInfo("Response error")
 	return nil, err
 }
 
@@ -316,4 +274,53 @@ func parse211(resp *Response) (list []string, err error) {
 	}
 	return list[:no], nil
 
+}
+
+// TrimString returns s without leading and trailing ASCII space.
+func TrimString(s string) string {
+	for len(s) > 0 && isASCIISpace(s[0]) {
+		s = s[1:]
+	}
+	for len(s) > 0 && isASCIISpace(s[len(s)-1]) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+// TrimBytes returns b without leading and trailing ASCII space.
+func TrimBytes(b []byte) []byte {
+	for len(b) > 0 && isASCIISpace(b[0]) {
+		b = b[1:]
+	}
+	for len(b) > 0 && isASCIISpace(b[len(b)-1]) {
+		b = b[:len(b)-1]
+	}
+	return b
+}
+
+func isASCIISpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+func isASCIILetter(b byte) bool {
+	b |= 0x20 // make lower case
+	return 'a' <= b && b <= 'z'
+}
+
+// An Error represents a numeric error response from a server.
+type Error struct {
+	Code int
+	Msg  string
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("%03d %s", e.Code, e.Msg)
+}
+
+// A ProtocolError describes a protocol violation such
+// as an invalid response or a hung-up connection.
+type ProtocolError string
+
+func (p ProtocolError) Error() string {
+	return string(p)
 }
