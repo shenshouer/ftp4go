@@ -61,7 +61,7 @@ func NewFtpConn(t *testing.T) (ftpClient *FTP, err error) {
 	ftpClient.SetPassive(true)
 
 	// connect
-	_, err = ftpClient.Connect(pars.ftpAddress, pars.ftpPort)
+	_, err = ftpClient.Connect(pars.ftpAddress, pars.ftpPort, "")
 	if err != nil {
 		t.Fatalf("The FTP connection could not be established, error: %v", err.Error())
 	}

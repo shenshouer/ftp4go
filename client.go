@@ -9,7 +9,9 @@ import (
 	"log"
 	"net/textproto"
 	//"log/syslog"
+	"code.google.com/p/go.net/proxy"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -99,6 +101,7 @@ type FTP struct {
 	logger        *log.Logger
 	timeoutInMsec int64
 	textprotoConn *textproto.Conn
+	dialer        proxy.Dialer
 	conn          net.Conn
 	encoding      string
 }
@@ -163,9 +166,8 @@ func NewFTP(debuglevel int) *FTP {
 }
 
 // Connect connects to the host by using the specified port or the default one if the value is <=0.
-func (ftp *FTP) Connect(host string, port int) (resp *Response, err error) {
+func (ftp *FTP) Connect(host string, port int, socks5ProxyUrl string) (resp *Response, err error) {
 
-	//ftp.logger.Printf("%s:%d", ftp.Host, ftp.Port)
 	if len(host) == 0 {
 		return nil, errors.New("The host must be specified")
 	}
@@ -176,12 +178,29 @@ func (ftp *FTP) Connect(host string, port int) (resp *Response, err error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", ftp.Host, ftp.Port)
+
+	// use the system proxy if emtpy
+	if socks5ProxyUrl == "" {
+		ftp.writeInfo("using environment proxy, url: ", os.Getenv("all_proxy"))
+		ftp.dialer = proxy.FromEnvironment()
+	} else {
+		ftp.dialer = proxy.Direct
+
+		if u, err1 := url.Parse(socks5ProxyUrl); err1 == nil {
+			p, err2 := proxy.FromURL(u, proxy.Direct)
+			if err2 == nil {
+				ftp.dialer = p
+			}
+		}
+
+	}
+
 	err = ftp.NewConn(addr)
 	if err != nil {
 		return
 	}
 
-	ftp.writeInfo("host:", ftp.Host, " port:", strconv.Itoa(ftp.Port))
+	ftp.writeInfo("host:", ftp.Host, " port:", strconv.Itoa(ftp.Port), " proxy enabled:", ftp.dialer != proxy.Direct)
 
 	// NOTE: this is an absolute time that needs refreshing after each READ/WRITE net operation
 	//ftp.conn.conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))

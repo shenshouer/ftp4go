@@ -96,7 +96,7 @@ func Dial(network, addr string) (net.Conn, error) {
 
 func (ftp *FTP) NewConn(addr string) error {
 
-	c, err := Dial("tcp", addr)
+	c, err := ftp.dialer.Dial("tcp", addr)
 
 	if err != nil {
 		return err
