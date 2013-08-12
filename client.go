@@ -804,10 +804,10 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 	// be in violation of the protocol (which only allows
 	// 1xx or error messages for LIST), so we just discard
 	// this response.
-	if resp.Message[:1] == "2" {
+	if getFirstChar(resp) == "2" {
 		resp, err = ftp.Read(cmd)
 	}
-	if resp.Message[:1] != "1" {
+	if getFirstChar(resp) != "1" {
 		err = NewErrReply(errors.New(resp.Message))
 		return
 	}

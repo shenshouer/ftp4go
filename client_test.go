@@ -1,7 +1,6 @@
 package ftp4go
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,29 +24,6 @@ var allpars = []*connPars{
 }
 
 var pars = allpars[0]
-
-func askParameter(question string, defaultValue string) (inputValue string, err error) {
-	fmt.Print(question)
-	//originalStdout := os.Stdout
-	//os.Stdout, _ = os.OpenFile(os.DevNull, os.O_RDONLY, 0)
-	//defer func(){os.Stdout = originalStdout}()
-	const NBUF = 512
-	var buf [NBUF]byte
-	switch nr, er := os.Stdin.Read(buf[:]); true {
-	case nr < 0:
-		fmt.Print(os.Stderr, "Error reading parameter. Error: ", er)
-		os.Exit(1)
-	case nr == 0: //EOF
-		inputValue, err = defaultValue, errors.New("Invalid parameter")
-	case nr > 0:
-		inputValue, err = strings.TrimSpace(string(buf[0:nr])), nil
-		if len(inputValue) == 0 {
-			inputValue = defaultValue
-		}
-	}
-	//fmt.Println("The input value is:", inputValue, " with length: ", len(inputValue))
-	return inputValue, err
-}
 
 func NewFtpConn(t *testing.T) (ftpClient *FTP, err error) {
 
@@ -184,7 +160,9 @@ func TestFeatures(t *testing.T) {
 	t.Log("The current folder is", cwd)
 
 	t.Log("Testings Mlsd")
-	ls, err := ftpClient.Mlsd(".", []string{"type", "size"})
+	//ls, err := ftpClient.Mlsd(".", []string{"type", "size"})
+	ls, err := ftpClient.Mlsd("", nil)
+
 	if err != nil {
 		t.Logf("The ftp command MLSD does not work or is not supported, error: %s", err.Error())
 	} else {
