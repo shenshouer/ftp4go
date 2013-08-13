@@ -19,6 +19,7 @@ type connPars struct {
 }
 
 var allpars = []*connPars{
+	&connPars{ftpAddress: "www.0catch.com", ftpPort: 21, username: "ftp4go.0catch.com", password: "g0ftpt3st", homefolder: "/", debugFtp: true},
 	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: true},
 	&connPars{ftpAddress: "ftp.fileserve.com", ftpPort: 21, username: "ftp4go", password: "52fe56bc", homefolder: "/", debugFtp: true},
 }
@@ -143,7 +144,7 @@ func TestFeatures(t *testing.T) {
 	fmt.Printf("Use UTF8\n")
 	_, err = ftpClient.Opts("UTF8 ON")
 	if err != nil {
-		t.Fatalf("error: %v", err)
+		t.Logf("UTF8 ON error: %v", err)
 	}
 
 	var cwd string

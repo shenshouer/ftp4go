@@ -771,13 +771,17 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 	ftp.writeInfo("Server is passive:", ftp.passiveserver)
 	if ftp.passiveserver {
 		host, port, error := ftp.makePasv()
+		if ftp.conn.LocalAddr().Network() != host {
+			ftp.writeInfo("The remote server answered with a different host address, which is", host, ", using the orginal host instead:", ftp.Host)
+			host = ftp.Host
+		}
 		if error != nil {
 			return nil, -1, error
 		}
 
 		addr := fmt.Sprintf("%s:%d", host, port)
 		if conn, err = ftp.dialer.Dial("tcp", addr); err != nil {
-			ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:",ftp.dialer != proxy.Direct)
+			ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:", ftp.dialer != proxy.Direct)
 			return
 		}
 
