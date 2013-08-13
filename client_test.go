@@ -185,7 +185,7 @@ func TestFeatures(t *testing.T) {
 
 	n, err = ftpClient.UploadDirTree(test_f, homefolder, maxSimultaneousConns, nil, nil)
 	if err != nil {
-		t.Fatalf("Error uploading folder tree %s, error:\n", test_f, err)
+		t.Fatalf("Error uploading folder tree %s, error: %v\n", test_f, err)
 	}
 	t.Logf("Uploaded %d files.\n", n)
 
@@ -328,7 +328,7 @@ func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *test
 
 	if err := ftpClient.RemoveRemoteDirTree(test_f); err != nil {
 		if err != DIRECTORY_NON_EXISTENT {
-			t.Fatalf("Error:", err.Error())
+			t.Fatalf("Error: %v", err)
 		}
 	}
 

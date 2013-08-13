@@ -729,11 +729,9 @@ func (ftp *FTP) StoreBytes(cmd FtpCmd, reader io.Reader, blocksize int, remotena
 
 			nr, err = bufReader.Read(s)
 
-			if err != nil {
-				eof = err == io.EOF
-				if !eof {
-					return err
-				}
+			eof = err == io.EOF
+			if err != nil && !eof {
+				return err
 			}
 
 			if nw, err = conn.Write(s[:nr]); err != nil {
@@ -778,11 +776,10 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 		}
 
 		addr := fmt.Sprintf("%s:%d", host, port)
-		if conn, err = net.Dial("tcp", addr); err != nil {
+		if conn, err = ftp.dialer.Dial("tcp", addr); err != nil {
+			ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:",ftp.dialer != proxy.Direct)
 			return
 		}
-
-		//conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 
 	} else {
 		if listener, err = ftp.makePort(); err != nil {
@@ -821,7 +818,6 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 		}
 		ftp.writeInfo("Trying to communicate with local host: ", conn.LocalAddr())
 		defer listener.Close() // close after getting the connection
-		//conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 	}
 
 	if resp.Code == 150 {
@@ -836,11 +832,10 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 func (ftp *FTP) makePort() (listener net.Listener, err error) {
 
 	tcpAddr := ftp.conn.LocalAddr()
-	ad := tcpAddr.String()
 	network := tcpAddr.Network()
 
 	var la *net.TCPAddr
-	if la, err = net.ResolveTCPAddr(network, ad); err != nil {
+	if la, err = net.ResolveTCPAddr(network, tcpAddr.String()); err != nil {
 		return
 	}
 	// get the new address
