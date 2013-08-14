@@ -53,7 +53,7 @@ func (ftp *FTP) removeRemoteDirTree(remoteDir string) (err error) {
 		case perm[0] != 'd':
 			// file, delete
 			ftp.Delete(fname)
-		case perm[0] == 'd': // directory 
+		case perm[0] == 'd': // directory
 			if err = ftp.RemoveRemoteDirTree(fname); err != nil {
 				return err
 			}
@@ -76,7 +76,6 @@ func (ftp *FTP) removeRemoteDirTree(remoteDir string) (err error) {
 //
 // The current workding directory is set back to the initial value at the end.
 func (ftp *FTP) UploadDirTree(localDir string, remoteRootDir string, maxSimultaneousConns int, excludedDirs []string, callback Callback) (n int, err error) {
-	//print("Uploading tree:", localDir, "\n")
 
 	if len(remoteRootDir) == 0 {
 		return n, errors.New("A valid remote root folder with write permission needs specifying.")

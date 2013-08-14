@@ -3,18 +3,19 @@ package ftp4go
 
 import (
 	"bufio"
+	"code.google.com/p/go.net/proxy"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	//"log/syslog"
 	"net"
+	"net/textproto"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
-
 
 // The default constants
 const (
@@ -98,6 +99,8 @@ type FTP struct {
 	passiveserver bool
 	logger        *log.Logger
 	timeoutInMsec int64
+	textprotoConn *textproto.Conn
+	dialer        proxy.Dialer
 	conn          net.Conn
 	encoding      string
 }
@@ -123,15 +126,11 @@ func (i FtpCmd) AppendParameters(pars ...string) string {
 	allPars[0] = i.String()
 	var k int = 1
 	for _, par := range pars {
-		p := strings.TrimSpace(par)
-		//fmt.Printf("The par value in AppendParameters is; %s\n", p)
-		if len(p) > 0 {
+		if p := strings.TrimSpace(par); len(p) > 0 {
 			allPars[k] = p
 			k++
 		}
 	}
-	//allPars = append(allPars, pars...)
-	//	fmt.Printf("\nThe value of allPars in AppendParameters is; %s", strings.Join(allPars[:k], " "))
 	return strings.Join(allPars[:k], " ")
 }
 
@@ -143,7 +142,7 @@ func (ftp *FTP) writeInfo(params ...interface{}) {
 
 // NewFTP creates a new FTP client using a debug level, default is 0, which is disabled.
 // The FTP server uses the passive tranfer mode by default.
-// 
+//
 // 	Debuglevel:
 // 		0 -> disabled
 // 		1 -> information
@@ -162,9 +161,8 @@ func NewFTP(debuglevel int) *FTP {
 }
 
 // Connect connects to the host by using the specified port or the default one if the value is <=0.
-func (ftp *FTP) Connect(host string, port int) (resp *Response, err error) {
+func (ftp *FTP) Connect(host string, port int, socks5ProxyUrl string) (resp *Response, err error) {
 
-	//ftp.logger.Printf("%s:%d", ftp.Host, ftp.Port)
 	if len(host) == 0 {
 		return nil, errors.New("The host must be specified")
 	}
@@ -175,22 +173,32 @@ func (ftp *FTP) Connect(host string, port int) (resp *Response, err error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", ftp.Host, ftp.Port)
-	ftp.writeInfo("host:", ftp.Host, " port:", strconv.Itoa(ftp.Port))
 
-	ftp.conn, err = net.Dial("tcp", addr)
+	// use the system proxy if emtpy
+	if socks5ProxyUrl == "" {
+		ftp.writeInfo("using environment proxy, url: ", os.Getenv("all_proxy"))
+		ftp.dialer = proxy.FromEnvironment()
+	} else {
+		ftp.dialer = proxy.Direct
 
-	/*
-		if err != nil {
-			return nil, err
+		if u, err1 := url.Parse(socks5ProxyUrl); err1 == nil {
+			p, err2 := proxy.FromURL(u, proxy.Direct)
+			if err2 == nil {
+				ftp.dialer = p
+			}
 		}
-		// wrap the tpc connection
-		ftp.textprotoConn = textproto.NewConn(ftp.tcpConn)
-	*/
 
-	if err != nil {
-		return nil, err
 	}
-	ftp.conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
+
+	err = ftp.NewConn(addr)
+	if err != nil {
+		return
+	}
+
+	ftp.writeInfo("host:", ftp.Host, " port:", strconv.Itoa(ftp.Port), " proxy enabled:", ftp.dialer != proxy.Direct)
+
+	// NOTE: this is an absolute time that needs refreshing after each READ/WRITE net operation
+	//ftp.conn.conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 
 	if resp, err = ftp.Read(NONE_FTP_CMD); err != nil {
 		return
@@ -235,26 +243,26 @@ func (ftp *FTP) Login(username, password string, acct string) (response *Respons
 		return
 	}
 
-	if getFirstChar(tempResponse) == "3" {
+	if tempResponse.getFirstChar() == "3" {
 		tempResponse, err = ftp.SendAndRead(PASSWORD_FTP_CMD, password)
 		if err != nil {
 			return
 		}
 	}
-	if getFirstChar(tempResponse) == "3" {
+	if tempResponse.getFirstChar() == "3" {
 		tempResponse, err = ftp.SendAndRead(ACCT_FTP_CMD, acct)
 		if err != nil {
 			return
 		}
 	}
-	if getFirstChar(tempResponse) != "2" {
+	if tempResponse.getFirstChar() != "2" {
 		err = NewErrReply(errors.New(tempResponse.Message))
 		return
 	}
 	return tempResponse, err
 }
 
-// Abort interrupts a file transfer, which uses out-of-band data. 
+// Abort interrupts a file transfer, which uses out-of-band data.
 // This does not follow the procedure from the RFC to send Telnet IP and Synch;
 // that does not seem to work with all servers. Instead just send the ABOR command as OOB data.
 func (ftp *FTP) Abort() (response *Response, err error) {
@@ -266,7 +274,7 @@ func (ftp *FTP) SendPort(host string, port int) (response *Response, err error) 
 	hbytes := strings.Split(host, ".") // return all substrings
 	pbytes := []string{strconv.Itoa(port / 256), strconv.Itoa(port % 256)}
 	bytes := strings.Join(append(hbytes, pbytes...), ",")
-	return ftp.SendAndReadEmpty(PORT_FTP_CMD, bytes)
+	return ftp.SendAndRead(PORT_FTP_CMD, bytes)
 }
 
 // makePasv sends a PASV command and returns the host and port number to be used for the data transfer connection.
@@ -281,7 +289,7 @@ func (ftp *FTP) makePasv() (host string, port int, err error) {
 
 // Acct sends an ACCT command.
 func (ftp *FTP) Acct() (response *Response, err error) {
-	return ftp.SendAndReadEmpty(ACCT_FTP_CMD)
+	return ftp.SendAndRead(ACCT_FTP_CMD)
 }
 
 // Mlsd lists a directory in a standardized format by using MLSD
@@ -325,7 +333,7 @@ func (ftp *FTP) Mlsd(path string, facts []string) (ls []*NameFactsLine, err erro
 // Feat lists all new FTP features that the server supports beyond those described in RFC 959.
 func (ftp *FTP) Feat(params ...string) (fts []string, err error) {
 	var r *Response
-	if r, err = ftp.SendAndReadEmpty(FEAT_FTP_CMD); err != nil {
+	if r, err = ftp.SendAndRead(FEAT_FTP_CMD); err != nil {
 		return
 	}
 
@@ -357,11 +365,11 @@ func (ftp *FTP) Rename(fromname string, toname string) (response *Response, err 
 	if err != nil {
 		return nil, err
 	}
-	if getFirstChar(tempResponse) != "3" {
+	if tempResponse.getFirstChar() != "3" {
 		err = NewErrReply(errors.New(tempResponse.Message))
 		return nil, err
 	}
-	return ftp.SendAndReadEmpty(RENAMETO_FTP_CMD, toname)
+	return ftp.SendAndRead(RENAMETO_FTP_CMD, toname)
 }
 
 // Delete deletes a file.
@@ -381,16 +389,16 @@ func (ftp *FTP) Delete(filename string) (response *Response, err error) {
 // Cwd changes to current directory.
 func (ftp *FTP) Cwd(dirname string) (response *Response, err error) {
 	if dirname == ".." {
-		return ftp.SendAndReadEmpty(CDUP_FTP_CMD)
+		return ftp.SendAndRead(CDUP_FTP_CMD)
 	} else if dirname == "" {
 		dirname = "."
 	}
-	return ftp.SendAndReadEmpty(CWD_FTP_CMD, dirname)
+	return ftp.SendAndRead(CWD_FTP_CMD, dirname)
 }
 
 // Size retrieves the size of a file.
 func (ftp *FTP) Size(filename string) (size int, err error) {
-	response, err := ftp.SendAndReadEmpty(SIZE_FTP_CMD, filename)
+	response, err := ftp.SendAndRead(SIZE_FTP_CMD, filename)
 	if response.Code == 213 {
 		size, _ = strconv.Atoi(strings.TrimSpace(response.Message[3:]))
 		return size, err
@@ -401,7 +409,7 @@ func (ftp *FTP) Size(filename string) (size int, err error) {
 // Mkd creates a directory and returns its full pathname.
 func (ftp *FTP) Mkd(dirname string) (dname string, err error) {
 	var response *Response
-	response, err = ftp.SendAndReadEmpty(MKDIR_FTP_CMD, dirname)
+	response, err = ftp.SendAndRead(MKDIR_FTP_CMD, dirname)
 	if err != nil {
 		return
 	}
@@ -415,14 +423,17 @@ func (ftp *FTP) Mkd(dirname string) (dname string, err error) {
 
 // Rmd removes a directory.
 func (ftp *FTP) Rmd(dirname string) (response *Response, err error) {
-	return ftp.SendAndReadEmpty(RMDIR_FTP_CMD, dirname)
+	return ftp.SendAndRead(RMDIR_FTP_CMD, dirname)
 }
 
 // Pwd returns the current working directory.
 func (ftp *FTP) Pwd() (dirname string, err error) {
-	response, err := ftp.SendAndReadEmpty(PWDIR_FTP_CMD)
+	response, err := ftp.SendAndRead(PWDIR_FTP_CMD)
 	// fix around non-compliant implementations such as IIS shipped
 	// with Windows server 2003
+	if err != nil {
+		return "", err
+	}
 	if response.Code != 257 {
 		return "", nil
 	}
@@ -431,7 +442,7 @@ func (ftp *FTP) Pwd() (dirname string, err error) {
 
 // Quits sends a QUIT command and closes the connection.
 func (ftp *FTP) Quit() (response *Response, err error) {
-	response, err = ftp.SendAndReadEmpty(QUIT_FTP_CMD)
+	response, err = ftp.SendAndRead(QUIT_FTP_CMD)
 	ftp.conn.Close()
 	return
 }
@@ -466,11 +477,11 @@ func (ftp *FTP) DownloadFile(remotename string, localpath string, useLineMode bo
 	return err
 }
 
-// UploadFile uploads a file from a local path to the current folder (see Cwd too) on the FTP server. 
+// UploadFile uploads a file from a local path to the current folder (see Cwd too) on the FTP server.
 // A remotename needs to be specified.
 // There are two modes set via the useLineMode flag:
 // - binary, 				useLineMode = false
-// - line by line (text), 	useLineMode = true 
+// - line by line (text), 	useLineMode = true
 func (ftp *FTP) UploadFile(remotename string, localpath string, useLineMode bool, callback Callback) (err error) {
 	var f *os.File
 	f, err = os.Open(localpath)
@@ -495,7 +506,7 @@ func (ftp *FTP) UploadFile(remotename string, localpath string, useLineMode bool
 
 // Opts returns a list of file in a directory in long form, by default the current.
 func (ftp *FTP) Opts(params ...string) (response *Response, err error) {
-	return ftp.SendAndReadEmpty(OPTS_FTP_CMD, params...)
+	return ftp.SendAndRead(OPTS_FTP_CMD, params...)
 }
 
 // GetLines retrieves data in line mode.
@@ -518,14 +529,12 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err er
 		}
 		defer conn.Close() // close the connection on exit
 
-		ftpReader := NewFtpReader(conn)
+		ftpReader := textproto.NewConn(conn)
 		ftp.writeInfo("Try and get lines via connection for remote address:", conn.RemoteAddr().String())
 
 		for {
-			line, err := ftpReader.readLine()
+			line, err := ftpReader.ReadLineBytes()
 
-			// fmt.Printf("Sent line to writer:'%s'\n", string(line))
-			//writer.Write([]byte(line))
 			if err != nil {
 				if err == io.EOF {
 					ftp.writeInfo("Reached end of buffer with line:", line)
@@ -534,7 +543,6 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err er
 				return err
 			}
 
-			// if _, err1 := fmt.Fprint(writer, line); err1 != nil {
 			if _, err1 := writer.Write(line); err1 != nil {
 				return err1
 			}
@@ -549,7 +557,7 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err er
 	}
 
 	ftp.writeInfo("Reading final empty line")
-	_, err = ftp.ReadEmpty(cmd)
+	_, err = ftp.Read(cmd)
 	return
 
 }
@@ -561,7 +569,7 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err er
 //                  block of data read.
 //        blocksize: The maximum number of bytes to read from the
 //                  socket at one time.  [default: 8192]
-//  
+//
 //Returns:
 //        The response code.
 func (ftp *FTP) GetBytes(cmd FtpCmd, writer io.Writer, blocksize int, params ...string) (err error) {
@@ -608,7 +616,7 @@ func (ftp *FTP) GetBytes(cmd FtpCmd, writer io.Writer, blocksize int, params ...
 		return err
 	}
 
-	_, err = ftp.ReadEmpty(cmd)
+	_, err = ftp.Read(cmd)
 	return
 }
 
@@ -679,12 +687,12 @@ func (ftp *FTP) StoreLines(cmd FtpCmd, reader io.Reader, remotename string, file
 
 	ftp.writeInfo("Reading final empty line")
 
-	_, err = ftp.ReadEmpty(cmd)
+	_, err = ftp.Read(cmd)
 	return
 
 }
 
-// StoreBytes uploads bytes in chunks defined by the blocksize parameter. 
+// StoreBytes uploads bytes in chunks defined by the blocksize parameter.
 // It uses an io.Reader to read the input data.
 func (ftp *FTP) StoreBytes(cmd FtpCmd, reader io.Reader, blocksize int, remotename string, filename string, callback Callback) (err error) {
 	var conn net.Conn
@@ -713,11 +721,9 @@ func (ftp *FTP) StoreBytes(cmd FtpCmd, reader io.Reader, blocksize int, remotena
 
 			nr, err = bufReader.Read(s)
 
-			if err != nil {
-				eof = err == io.EOF
-				if !eof {
-					return err
-				}
+			eof = err == io.EOF
+			if err != nil && !eof {
+				return err
 			}
 
 			if nw, err = conn.Write(s[:nr]); err != nil {
@@ -740,15 +746,15 @@ func (ftp *FTP) StoreBytes(cmd FtpCmd, reader io.Reader, blocksize int, remotena
 		return err
 	}
 
-	_, err = ftp.ReadEmpty(cmd)
+	_, err = ftp.Read(cmd)
 	return
 }
 
 // transferCmd initializes a tranfer over the data connection.
-// 
+//
 // If the transfer is active, send a port command and the tranfer command
 // then accept the connection. If the server is passive, send a pasv command, connect to it
-// and start the tranfer command. Either way return the connection and the expected size of the transfer. 
+// and start the tranfer command. Either way return the connection and the expected size of the transfer.
 // The expected size may be none if it could be not be determined.
 func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size int, err error) {
 
@@ -757,16 +763,19 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 	ftp.writeInfo("Server is passive:", ftp.passiveserver)
 	if ftp.passiveserver {
 		host, port, error := ftp.makePasv()
+		if ftp.conn.LocalAddr().Network() != host {
+			ftp.writeInfo("The remote server answered with a different host address, which is", host, ", using the orginal host instead:", ftp.Host)
+			host = ftp.Host
+		}
 		if error != nil {
 			return nil, -1, error
 		}
 
 		addr := fmt.Sprintf("%s:%d", host, port)
-		if conn, err = net.Dial("tcp", addr); err != nil {
+		if conn, err = ftp.dialer.Dial("tcp", addr); err != nil {
+			ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:", ftp.dialer != proxy.Direct)
 			return
 		}
-
-		conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 
 	} else {
 		if listener, err = ftp.makePort(); err != nil {
@@ -788,10 +797,10 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 	// be in violation of the protocol (which only allows
 	// 1xx or error messages for LIST), so we just discard
 	// this response.
-	if resp.Message[:1] == "2" {
+	if resp.getFirstChar() == "2" {
 		resp, err = ftp.Read(cmd)
 	}
-	if resp.Message[:1] != "1" {
+	if resp.getFirstChar() != "1" {
 		err = NewErrReply(errors.New(resp.Message))
 		return
 	}
@@ -805,7 +814,6 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 		}
 		ftp.writeInfo("Trying to communicate with local host: ", conn.LocalAddr())
 		defer listener.Close() // close after getting the connection
-		conn.SetDeadline(getTimeoutInMsec(ftp.timeoutInMsec))
 	}
 
 	if resp.Code == 150 {
@@ -820,11 +828,10 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 func (ftp *FTP) makePort() (listener net.Listener, err error) {
 
 	tcpAddr := ftp.conn.LocalAddr()
-	ad := tcpAddr.String()
 	network := tcpAddr.Network()
 
 	var la *net.TCPAddr
-	if la, err = net.ResolveTCPAddr(network, ad); err != nil {
+	if la, err = net.ResolveTCPAddr(network, tcpAddr.String()); err != nil {
 		return
 	}
 	// get the new address

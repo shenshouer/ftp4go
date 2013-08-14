@@ -1,7 +1,6 @@
 package ftp4go
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,32 +21,10 @@ type connPars struct {
 var allpars = []*connPars{
 	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: false},
 	&connPars{ftpAddress: "ftp.fileserve.com", ftpPort: 21, username: "ftp4go", password: "52fe56bc", homefolder: "/", debugFtp: true},
+	&connPars{ftpAddress: "www.0catch.com", ftpPort: 21, username: "ftp4go.0catch.com", password: "g0ftpt3st", homefolder: "/", debugFtp: true},
 }
 
 var pars = allpars[0]
-
-func askParameter(question string, defaultValue string) (inputValue string, err error) {
-	fmt.Print(question)
-	//originalStdout := os.Stdout
-	//os.Stdout, _ = os.OpenFile(os.DevNull, os.O_RDONLY, 0)
-	//defer func(){os.Stdout = originalStdout}()
-	const NBUF = 512
-	var buf [NBUF]byte
-	switch nr, er := os.Stdin.Read(buf[:]); true {
-	case nr < 0:
-		fmt.Print(os.Stderr, "Error reading parameter. Error: ", er)
-		os.Exit(1)
-	case nr == 0: //EOF
-		inputValue, err = defaultValue, errors.New("Invalid parameter")
-	case nr > 0:
-		inputValue, err = strings.TrimSpace(string(buf[0:nr])), nil
-		if len(inputValue) == 0 {
-			inputValue = defaultValue
-		}
-	}
-	//fmt.Println("The input value is:", inputValue, " with length: ", len(inputValue))
-	return inputValue, err
-}
 
 func NewFtpConn(t *testing.T) (ftpClient *FTP, err error) {
 
@@ -61,9 +38,9 @@ func NewFtpConn(t *testing.T) (ftpClient *FTP, err error) {
 	ftpClient.SetPassive(true)
 
 	// connect
-	_, err = ftpClient.Connect(pars.ftpAddress, pars.ftpPort)
+	_, err = ftpClient.Connect(pars.ftpAddress, pars.ftpPort, "")
 	if err != nil {
-		t.Fatalf("The FTP connection could not be established, error: ", err.Error())
+		t.Fatalf("The FTP connection could not be established, error: %v", err.Error())
 	}
 
 	t.Logf("Connecting with username: %s and password %s", pars.username, pars.password)
@@ -80,7 +57,7 @@ type asciiTestSet struct {
 	isascii bool
 }
 
-func TestServerAsciiMode(t *testing.T) {
+func _TestServerAsciiMode(t *testing.T) {
 
 	ftpClient, err := NewFtpConn(t)
 	defer ftpClient.Quit()
@@ -164,18 +141,29 @@ func TestFeatures(t *testing.T) {
 		fmt.Printf("%s\n", ft)
 	}
 
-	//var resp *Response
+	fmt.Printf("Use UTF8\n")
+	_, err = ftpClient.Opts("UTF8 ON")
+	if err != nil {
+		t.Logf("UTF8 ON error: %v", err)
+	}
+
 	var cwd string
+
 	_, err = ftpClient.Cwd(homefolder) // home
 	if err != nil {
-		t.Fatalf("error: ", err)
+		t.Fatalf("error: %v", err)
 	}
 
 	cwd, err = ftpClient.Pwd()
+	if err != nil {
+		t.Fatalf("error: ", err)
+	}
 	t.Log("The current folder is", cwd)
 
 	t.Log("Testings Mlsd")
-	ls, err := ftpClient.Mlsd(".", []string{"type", "size"})
+	//ls, err := ftpClient.Mlsd(".", []string{"type", "size"})
+	ls, err := ftpClient.Mlsd("", nil)
+
 	if err != nil {
 		t.Logf("The ftp command MLSD does not work or is not supported, error: %s", err.Error())
 	} else {
@@ -198,7 +186,7 @@ func TestFeatures(t *testing.T) {
 
 	n, err = ftpClient.UploadDirTree(test_f, homefolder, maxSimultaneousConns, nil, nil)
 	if err != nil {
-		t.Fatalf("Error uploading folder tree %s, error:\n", test_f, err)
+		t.Fatalf("Error uploading folder tree %s, error: %v\n", test_f, err)
 	}
 	t.Logf("Uploaded %d files.\n", n)
 
@@ -247,7 +235,7 @@ func _TestRecursion(t *testing.T) {
 	stats, fileUploaded, _ := startStats()
 	var collector = func(info *CallbackInfo) {
 		if info.Eof {
-			stats <- info // pipe in for stats	
+			stats <- info // pipe in for stats
 		}
 	} // do not block the call
 
@@ -341,7 +329,7 @@ func cleanupFolderTree(ftpClient *FTP, test_f string, homefolder string, t *test
 
 	if err := ftpClient.RemoveRemoteDirTree(test_f); err != nil {
 		if err != DIRECTORY_NON_EXISTENT {
-			t.Fatalf("Error:", err.Error())
+			t.Fatalf("Error: %v", err)
 		}
 	}
 
@@ -425,7 +413,7 @@ func startStats() (stats chan *CallbackInfo, fileUploaded chan bool, quit chan b
 						fmt.Print(msg)
 					}
 					/*
-						if size <= st.BytesTransmitted {	
+						if size <= st.BytesTransmitted {
 							fileUploaded <- true // done here
 						}
 					*/
