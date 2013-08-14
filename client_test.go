@@ -19,9 +19,9 @@ type connPars struct {
 }
 
 var allpars = []*connPars{
-	&connPars{ftpAddress: "www.0catch.com", ftpPort: 21, username: "ftp4go.0catch.com", password: "g0ftpt3st", homefolder: "/", debugFtp: true},
-	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: true},
+	&connPars{ftpAddress: "ftp.drivehq.com", ftpPort: 21, username: "goftptest", password: "g0ftpt3st", homefolder: "/publicFolder", debugFtp: false},
 	&connPars{ftpAddress: "ftp.fileserve.com", ftpPort: 21, username: "ftp4go", password: "52fe56bc", homefolder: "/", debugFtp: true},
+	&connPars{ftpAddress: "www.0catch.com", ftpPort: 21, username: "ftp4go.0catch.com", password: "g0ftpt3st", homefolder: "/", debugFtp: true},
 }
 
 var pars = allpars[0]

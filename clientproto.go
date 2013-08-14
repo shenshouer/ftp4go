@@ -24,10 +24,6 @@ var (
 	NewErrProto = func(error error) error { return errors.New("Protocol error: " + error.Error()) }
 )
 
-func getFirstChar(resp *Response) string {
-	return strconv.Itoa(resp.Code)[0:1]
-}
-
 // string writer
 type stringSliceWriter struct {
 	s []string
@@ -36,7 +32,7 @@ type stringSliceWriter struct {
 // utility string writer
 func (sw *stringSliceWriter) Write(p []byte) (n int, err error) {
 	sw.s = append(sw.s, string(p))
-	n = len(sw.s)
+	n = len(p)
 	return
 }
 
@@ -58,8 +54,8 @@ func (tfw *textFileWriter) Write(p []byte) (n int, err error) {
 		return
 	}
 
-	tfw.bw.WriteByte('\n') // always add a new line
-	return n + 1, err
+	n1, err1 := tfw.bw.WriteRune('\n') // always add a new line
+	return n + n1, err1
 }
 
 type CallbackInfo struct {
@@ -75,6 +71,13 @@ type Response struct {
 	Code    int
 	Message string
 	Stream  []byte
+}
+
+func (r *Response) getFirstChar() string {
+	if r == nil {
+		return ""
+	}
+	return strconv.Itoa(r.Code)[0:1]
 }
 
 var re227, re150 *regexp.Regexp
@@ -196,8 +199,6 @@ func parse150ForSize(resp *Response) (int, error) {
 	if len(matches) < 2 {
 		return -1, nil
 	}
-
-	//print("The match from parse150ForSize returned: " + matches[1] + "\n")
 
 	return strconv.Atoi(string(matches[1]))
 

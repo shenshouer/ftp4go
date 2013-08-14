@@ -3,14 +3,13 @@ package ftp4go
 
 import (
 	"bufio"
+	"code.google.com/p/go.net/proxy"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net/textproto"
-	//"log/syslog"
-	"code.google.com/p/go.net/proxy"
 	"net"
+	"net/textproto"
 	"net/url"
 	"os"
 	"strconv"
@@ -127,15 +126,11 @@ func (i FtpCmd) AppendParameters(pars ...string) string {
 	allPars[0] = i.String()
 	var k int = 1
 	for _, par := range pars {
-		p := strings.TrimSpace(par)
-		//fmt.Printf("The par value in AppendParameters is; %s\n", p)
-		if len(p) > 0 {
+		if p := strings.TrimSpace(par); len(p) > 0 {
 			allPars[k] = p
 			k++
 		}
 	}
-	//allPars = append(allPars, pars...)
-	//	fmt.Printf("\nThe value of allPars in AppendParameters is; %s", strings.Join(allPars[:k], " "))
 	return strings.Join(allPars[:k], " ")
 }
 
@@ -248,19 +243,19 @@ func (ftp *FTP) Login(username, password string, acct string) (response *Respons
 		return
 	}
 
-	if getFirstChar(tempResponse) == "3" {
+	if tempResponse.getFirstChar() == "3" {
 		tempResponse, err = ftp.SendAndRead(PASSWORD_FTP_CMD, password)
 		if err != nil {
 			return
 		}
 	}
-	if getFirstChar(tempResponse) == "3" {
+	if tempResponse.getFirstChar() == "3" {
 		tempResponse, err = ftp.SendAndRead(ACCT_FTP_CMD, acct)
 		if err != nil {
 			return
 		}
 	}
-	if getFirstChar(tempResponse) != "2" {
+	if tempResponse.getFirstChar() != "2" {
 		err = NewErrReply(errors.New(tempResponse.Message))
 		return
 	}
@@ -370,7 +365,7 @@ func (ftp *FTP) Rename(fromname string, toname string) (response *Response, err 
 	if err != nil {
 		return nil, err
 	}
-	if getFirstChar(tempResponse) != "3" {
+	if tempResponse.getFirstChar() != "3" {
 		err = NewErrReply(errors.New(tempResponse.Message))
 		return nil, err
 	}
@@ -540,8 +535,6 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err er
 		for {
 			line, err := ftpReader.ReadLineBytes()
 
-			// fmt.Printf("Sent line to writer:'%s'\n", string(line))
-			//writer.Write([]byte(line))
 			if err != nil {
 				if err == io.EOF {
 					ftp.writeInfo("Reached end of buffer with line:", line)
@@ -550,7 +543,6 @@ func (ftp *FTP) GetLines(cmd FtpCmd, writer io.Writer, params ...string) (err er
 				return err
 			}
 
-			// if _, err1 := fmt.Fprint(writer, line); err1 != nil {
 			if _, err1 := writer.Write(line); err1 != nil {
 				return err1
 			}
@@ -805,10 +797,10 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 	// be in violation of the protocol (which only allows
 	// 1xx or error messages for LIST), so we just discard
 	// this response.
-	if getFirstChar(resp) == "2" {
+	if resp.getFirstChar() == "2" {
 		resp, err = ftp.Read(cmd)
 	}
-	if getFirstChar(resp) != "1" {
+	if resp.getFirstChar() != "1" {
 		err = NewErrReply(errors.New(resp.Message))
 		return
 	}
