@@ -98,7 +98,7 @@ type FTP struct {
 	welcome       string
 	passiveserver bool
 	logger        *log.Logger
-	timeoutInMsec int64
+	//timeoutInMsec int64
 	textprotoConn *textproto.Conn
 	dialer        proxy.Dialer
 	conn          net.Conn
@@ -151,10 +151,10 @@ func (ftp *FTP) writeInfo(params ...interface{}) {
 func NewFTP(debuglevel int) *FTP {
 	logger := log.New(os.Stdout, "", log.LstdFlags) //syslog.NewLogger(syslog.LOG_ERR, 999)
 	ftp := &FTP{
-		debugging:     debuglevel,
-		Port:          DefaultFtpPort,
-		logger:        logger,
-		timeoutInMsec: DefaultTimeoutInMsec,
+		debugging: debuglevel,
+		Port:      DefaultFtpPort,
+		logger:    logger,
+		//timeoutInMsec: DefaultTimeoutInMsec,
 		passiveserver: true,
 	}
 	return ftp
