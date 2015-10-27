@@ -3,7 +3,7 @@ package ftp4go
 
 import (
 	"bufio"
-	"code.google.com/p/go.net/proxy"
+	"golang.org/x/net/proxy"
 	"errors"
 	"fmt"
 	"io"
