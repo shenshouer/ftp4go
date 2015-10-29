@@ -245,7 +245,8 @@ func (ftp *FTP) Login(username, password string, acct string) (response *Respons
 		return
 	}
 
-	if tempResponse.getFirstChar() == "3" {
+//	if tempResponse.getFirstChar() == "3" {
+	if tempResponse.Code == StatusUserOK {
 		tempResponse, err = ftp.SendAndRead(PASSWORD_FTP_CMD, password)
 		if err != nil {
 			return
@@ -257,7 +258,8 @@ func (ftp *FTP) Login(username, password string, acct string) (response *Respons
 			return
 		}
 	}
-	if tempResponse.getFirstChar() != "2" {
+//	if tempResponse.getFirstChar() != "2" {
+	if tempResponse.Code != StatusLoggedIn {
 		err = NewErrReply(errors.New(tempResponse.Message))
 		return
 	}
@@ -380,7 +382,7 @@ func (ftp *FTP) Delete(filename string) (response *Response, err error) {
 	if err != nil {
 		return nil, err
 	}
-	if c := tempResponse.Code; c == 250 || c == 200 {
+	if c := tempResponse.Code; c == StatusRequestedFileActionOK || c == StatusCommandOK {
 		return tempResponse, nil
 	} else {
 		return nil, NewErrReply(errors.New(tempResponse.Message))
@@ -401,7 +403,10 @@ func (ftp *FTP) Cwd(dirname string) (response *Response, err error) {
 // Size retrieves the size of a file.
 func (ftp *FTP) Size(filename string) (size int, err error) {
 	response, err := ftp.SendAndRead(SIZE_FTP_CMD, filename)
-	if response.Code == 213 {
+	if err != nil{
+		return
+	}
+	if response.Code == StatusFile {
 		//size, _ = strconv.Atoi(strings.TrimSpace(response.Message[3:]))
 		size, _ = strconv.Atoi(response.Message)
 		return size, err
@@ -418,7 +423,7 @@ func (ftp *FTP) Mkd(dirname string) (dname string, err error) {
 	}
 	// fix around non-compliant implementations such as IIS shipped
 	// with Windows server 2003
-	if response.Code != 257 {
+	if response.Code != StatusPathCreated {
 		return "", nil
 	}
 	return parse257(response)
