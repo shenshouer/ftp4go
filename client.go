@@ -55,6 +55,7 @@ const (
 	CDUP_FTP_CMD       FtpCmd = 23
 	QUIT_FTP_CMD       FtpCmd = 24
 	MLSD_FTP_CMD       FtpCmd = 25
+	REST_FTP_CMD	   FtpCmd = 26
 )
 
 const MSG_OOB = 0x1 //Process data out of band
@@ -86,6 +87,7 @@ var ftpCmdStrings = map[FtpCmd]string{
 	PWDIR_FTP_CMD:      "PWD",
 	CDUP_FTP_CMD:       "CDUP",
 	QUIT_FTP_CMD:       "QUIT",
+	REST_FTP_CMD:		"REST",
 }
 
 // The FTP client structure containing:
@@ -400,7 +402,8 @@ func (ftp *FTP) Cwd(dirname string) (response *Response, err error) {
 func (ftp *FTP) Size(filename string) (size int, err error) {
 	response, err := ftp.SendAndRead(SIZE_FTP_CMD, filename)
 	if response.Code == 213 {
-		size, _ = strconv.Atoi(strings.TrimSpace(response.Message[3:]))
+		//size, _ = strconv.Atoi(strings.TrimSpace(response.Message[3:]))
+		size, _ = strconv.Atoi(response.Message)
 		return size, err
 	}
 	return
@@ -600,6 +603,10 @@ func (ftp *FTP) GetBytes(cmd FtpCmd, writer io.Writer, blocksize int, params ...
 				return err1
 			}
 
+			if tmpfile, ok := writer.(*os.File); ok{
+				tmpfile.Sync()
+			}
+
 			if err != nil {
 				if err == io.EOF {
 					break
@@ -617,6 +624,119 @@ func (ftp *FTP) GetBytes(cmd FtpCmd, writer io.Writer, blocksize int, params ...
 	}
 
 	_, err = ftp.Read(cmd)
+	return
+}
+
+
+func (ftp *FTP) DownloadResumeFile(remotename string, localpath string, useLineMode bool) (err error) {
+	// remove local file
+//	os.Remove(localpath)
+	var f *os.File
+	f, err = os.OpenFile(localpath, os.O_WRONLY|os.O_CREATE, 0644)
+	defer f.Close()
+
+	if err != nil {
+		return
+	}
+
+	if useLineMode {
+		fmt.Println(">>>>>>>>>>1")
+		w := newTextFileWriter(f)
+		defer w.bw.Flush() // remember to flush
+		if err = ftp.GetLines(RETR_FTP_CMD, w, remotename); err != nil {
+			return err
+		}
+	} else {
+		fmt.Println(">>>>>>>>>>2")
+		var stat os.FileInfo
+		stat, err = f.Stat()
+		if err != nil{
+			return
+		}
+
+		offset := stat.Size()
+		fmt.Println(">>>>>>>>>>3 == ", offset)
+		if err = ftp.ResumeFile(RETR_FTP_CMD, f,offset, BLOCK_SIZE, remotename); err != nil {
+			return err
+		}
+	}
+
+	return err
+}
+
+
+
+func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize int, params ...string) (err error) {
+	fmt.Println(">>>>>>>>>>4 == ", offset)
+
+	var conn net.Conn
+	if _, err = ftp.SendAndRead(TYPE_I_FTP_CMD); err != nil {
+		return
+	}
+
+	fmt.Println(">>>>>>>>>>5")
+	// wrap this code up to guarantee the connection disposal via a defer
+	separateCall := func() error {
+		fmt.Println(">>>>>>>>>>rrrrr  5 @@@")
+
+		if offset != 0{
+			if res, err := ftp.SendAndRead(REST_FTP_CMD, fmt.Sprintf("%d", offset)); err != nil{
+				return err
+			}else{
+				fmt.Println(res)
+			}
+
+		}
+
+		fmt.Println(">>>>>>>>>>rrrrr  6 @@@")
+
+		if conn, _, err = ftp.transferCmd(cmd, params...); err != nil {
+			return err
+		}
+		defer conn.Close() // close the connection on exit
+
+		fmt.Println(">>>>>>>>>>rrrrr  7 @@@")
+
+		bufReader := bufio.NewReaderSize(conn, blocksize)
+
+		ftp.writeInfo("Try and get bytes via connection for remote address:", conn.RemoteAddr().String())
+
+		s := make([]byte, blocksize)
+		var n int
+
+		for {
+
+			n, err = bufReader.Read(s)
+			ftp.writeInfo("GETBYTES: Number of bytes read:", n)
+
+			if _, err1 := writer.WriteAt(s[:n], offset); err1 != nil {
+				return err1
+			}
+			if err2 := writer.Sync(); err2 != nil{
+				return err2
+			}
+
+			offset += int64(n)
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+		}
+
+		return nil
+	}
+
+	fmt.Println(">>>>>>>>>>6")
+	if err := separateCall(); err != nil {
+		return err
+	}
+
+	fmt.Println(">>>>>>>>>>7")
+	_, err = ftp.Read(cmd)
+	fmt.Println(">>>>>>>>>>7", err)
 	return
 }
 
