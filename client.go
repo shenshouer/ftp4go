@@ -640,14 +640,12 @@ func (ftp *FTP) DownloadResumeFile(remotename string, localpath string, useLineM
 	}
 
 	if useLineMode {
-		fmt.Println(">>>>>>>>>>1")
 		w := newTextFileWriter(f)
 		defer w.bw.Flush() // remember to flush
 		if err = ftp.GetLines(RETR_FTP_CMD, w, remotename); err != nil {
 			return err
 		}
 	} else {
-		fmt.Println(">>>>>>>>>>2")
 		var stat os.FileInfo
 		stat, err = f.Stat()
 		if err != nil{
@@ -655,7 +653,6 @@ func (ftp *FTP) DownloadResumeFile(remotename string, localpath string, useLineM
 		}
 
 		offset := stat.Size()
-		fmt.Println(">>>>>>>>>>3 == ", offset)
 		if err = ftp.ResumeFile(RETR_FTP_CMD, f,offset, BLOCK_SIZE, remotename); err != nil {
 			return err
 		}
@@ -667,17 +664,13 @@ func (ftp *FTP) DownloadResumeFile(remotename string, localpath string, useLineM
 
 
 func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize int, params ...string) (err error) {
-	fmt.Println(">>>>>>>>>>4 == ", offset)
-
 	var conn net.Conn
 	if _, err = ftp.SendAndRead(TYPE_I_FTP_CMD); err != nil {
 		return
 	}
 
-	fmt.Println(">>>>>>>>>>5")
 	// wrap this code up to guarantee the connection disposal via a defer
 	separateCall := func() error {
-		fmt.Println(">>>>>>>>>>rrrrr  5 @@@")
 
 		if offset != 0{
 			if res, err := ftp.SendAndRead(REST_FTP_CMD, fmt.Sprintf("%d", offset)); err != nil{
@@ -688,14 +681,11 @@ func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize i
 
 		}
 
-		fmt.Println(">>>>>>>>>>rrrrr  6 @@@")
 
 		if conn, _, err = ftp.transferCmd(cmd, params...); err != nil {
 			return err
 		}
 		defer conn.Close() // close the connection on exit
-
-		fmt.Println(">>>>>>>>>>rrrrr  7 @@@")
 
 		bufReader := bufio.NewReaderSize(conn, blocksize)
 
@@ -729,14 +719,11 @@ func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize i
 		return nil
 	}
 
-	fmt.Println(">>>>>>>>>>6")
 	if err := separateCall(); err != nil {
 		return err
 	}
 
-	fmt.Println(">>>>>>>>>>7")
 	_, err = ftp.Read(cmd)
-	fmt.Println(">>>>>>>>>>7", err)
 	return
 }
 
