@@ -107,3 +107,4 @@ Some new methods have been implemented to upload and download files, recursively
 
 ## TODOs and unsupported functionality
 * TLS is not supported yet
+* add multi goroutine  for one download task support 
