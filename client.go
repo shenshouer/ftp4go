@@ -105,6 +105,7 @@ type FTP struct {
 	dialer        proxy.Dialer
 	conn          net.Conn
 	encoding      string
+	stop 		  chan bool
 }
 
 type NameFactsLine struct {
@@ -140,6 +141,11 @@ func (ftp *FTP) writeInfo(params ...interface{}) {
 	if ftp.debugging >= 1 {
 		log.Println(params...)
 	}
+}
+
+func (ftp *FTP) Stop(){
+	ftp.stop = make(chan bool)
+	ftp.stop <- true
 }
 
 // NewFTP creates a new FTP client using a debug level, default is 0, which is disabled.
@@ -451,7 +457,11 @@ func (ftp *FTP) Pwd() (dirname string, err error) {
 // Quits sends a QUIT command and closes the connection.
 func (ftp *FTP) Quit() (response *Response, err error) {
 	response, err = ftp.SendAndRead(QUIT_FTP_CMD)
-	ftp.conn.Close()
+	if ftp.conn != nil{
+		ftp.conn.Close()
+		ftp.conn = nil
+	}
+
 	return
 }
 
@@ -700,23 +710,47 @@ func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize i
 		var n int
 
 		for {
+			if ftp.stop != nil{
+				select {
+				case <- ftp.stop:
+					return NewErrStop
+				default:
+					n, err = bufReader.Read(s)
+					ftp.writeInfo("GETBYTES: Number of bytes read:", n)
 
-			n, err = bufReader.Read(s)
-			ftp.writeInfo("GETBYTES: Number of bytes read:", n)
+					if _, err1 := writer.WriteAt(s[:n], offset); err1 != nil {
+						return err1
+					}
+					if err2 := writer.Sync(); err2 != nil{
+						return err2
+					}
 
-			if _, err1 := writer.WriteAt(s[:n], offset); err1 != nil {
-				return err1
-			}
-			if err2 := writer.Sync(); err2 != nil{
-				return err2
-			}
-
-			offset += int64(n)
-			if err != nil {
-				if err == io.EOF {
-					break
+					offset += int64(n)
+					if err != nil {
+						if err == io.EOF {
+							break
+						}
+						return err
+					}
 				}
-				return err
+			}else {
+				n, err = bufReader.Read(s)
+				ftp.writeInfo("GETBYTES: Number of bytes read:", n)
+
+				if _, err1 := writer.WriteAt(s[:n], offset); err1 != nil {
+					return err1
+				}
+				if err2 := writer.Sync(); err2 != nil{
+					return err2
+				}
+
+				offset += int64(n)
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return err
+				}
 			}
 
 		}

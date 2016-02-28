@@ -22,6 +22,7 @@ var (
 	NewErrTemp  = func(error error) error { return errors.New("Temporary error: " + error.Error()) }
 	NewErrPerm  = func(error error) error { return errors.New("Permanent error: " + error.Error()) }
 	NewErrProto = func(error error) error { return errors.New("Protocol error: " + error.Error()) }
+	NewErrStop	= fmt.Errorf("Stop by human behavior: call FTP.Stop()")
 )
 
 // string writer
