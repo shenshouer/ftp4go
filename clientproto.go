@@ -212,11 +212,11 @@ func parse257(resp *Response) (dirname string, err error) {
 		err = NewErrProto(errors.New(resp.Message))
 		return "", err
 	}
-	if resp.Message[3:5] != " \"" {
+	if resp.Message[0:1] != "\"" {
 		return "", nil // Not compliant to RFC 959, but UNIX ftpd does this
 	}
 	dirname = ""
-	i := 5
+	i := 1
 	n := len(resp.Message)
 	for i < n {
 		c := resp.Message[i]
