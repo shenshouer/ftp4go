@@ -16,6 +16,8 @@ import (
 )  
 func main() {
   ftpClient := ftp4go.NewFTP(0) // 1 for debugging
+  //set time out
+  ftpClient.SetFTPTimeout(20 * time.Second)
   //connect
   _, err := ftpClient.Connect("myFtpAddress", ftp4go.DefaultFtpPort)
   if err != nil {

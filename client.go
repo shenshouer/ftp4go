@@ -20,7 +20,7 @@ import (
 // The default constants
 const (
 	DefaultFtpPort       = 21
-	DefaultTimeoutInMsec = 1000
+	DefaultTimeoutInMsec = 20 * time.Second
 	CRLF                 = "\r\n"
 	BLOCK_SIZE           = 8192
 )
@@ -100,7 +100,7 @@ type FTP struct {
 	welcome       string
 	passiveserver bool
 	logger        *log.Logger
-	//timeoutInMsec int64
+	timeoutInMsec time.Duration
 	textprotoConn *textproto.Conn
 	dialer        proxy.Dialer
 	conn          net.Conn
@@ -166,6 +166,18 @@ func NewFTP(debuglevel int) *FTP {
 		passiveserver: true,
 	}
 	return ftp
+}
+
+//Set ftp dial timeout
+func (ftp *FTP) SetFTPTimeout(timeout time.Duration) error {
+	if ftp == nil {
+		return errors.New("ftp client is nil")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be greater than 0")
+	}
+	ftp.timeoutInMsec = timeout
+	return nil
 }
 
 // Connect connects to the host by using the specified port or the default one if the value is <=0.
@@ -916,9 +928,16 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 		}
 
 		addr := fmt.Sprintf("%s:%d", host, port)
-		if conn, err = ftp.dialer.Dial("tcp", addr); err != nil {
-			ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:", ftp.dialer != proxy.Direct)
-			return
+		if ftp.timeoutInMsec > 0 {
+			if conn, err = net.DialTimeout("tcp", addr, ftp.timeoutInMsec); err != nil {
+				ftp.writeInfo("Dial error, address:", addr, "error:", err)
+				return
+			}
+		} else {
+			if conn, err = ftp.dialer.Dial("tcp", addr); err != nil {
+				ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:", ftp.dialer != proxy.Direct)
+				return
+			}
 		}
 
 	} else {
