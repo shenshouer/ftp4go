@@ -3,9 +3,9 @@ package ftp4go
 
 import (
 	"bufio"
-	"golang.org/x/net/proxy"
 	"errors"
 	"fmt"
+	"golang.org/x/net/proxy"
 	"io"
 	"log"
 	"net"
@@ -20,7 +20,7 @@ import (
 // The default constants
 const (
 	DefaultFtpPort       = 21
-	DefaultTimeoutInMsec = 1000
+	DefaultTimeoutInMsec = 20 * time.Second
 	CRLF                 = "\r\n"
 	BLOCK_SIZE           = 8192
 )
@@ -55,7 +55,7 @@ const (
 	CDUP_FTP_CMD       FtpCmd = 23
 	QUIT_FTP_CMD       FtpCmd = 24
 	MLSD_FTP_CMD       FtpCmd = 25
-	REST_FTP_CMD	   FtpCmd = 26
+	REST_FTP_CMD       FtpCmd = 26
 )
 
 const MSG_OOB = 0x1 //Process data out of band
@@ -87,7 +87,7 @@ var ftpCmdStrings = map[FtpCmd]string{
 	PWDIR_FTP_CMD:      "PWD",
 	CDUP_FTP_CMD:       "CDUP",
 	QUIT_FTP_CMD:       "QUIT",
-	REST_FTP_CMD:		"REST",
+	REST_FTP_CMD:       "REST",
 }
 
 // The FTP client structure containing:
@@ -100,12 +100,12 @@ type FTP struct {
 	welcome       string
 	passiveserver bool
 	logger        *log.Logger
-	//timeoutInMsec int64
+	timeoutInMsec time.Duration
 	textprotoConn *textproto.Conn
 	dialer        proxy.Dialer
 	conn          net.Conn
 	encoding      string
-	stop 		  chan bool
+	stop          chan bool
 }
 
 type NameFactsLine struct {
@@ -143,7 +143,7 @@ func (ftp *FTP) writeInfo(params ...interface{}) {
 	}
 }
 
-func (ftp *FTP) Stop(){
+func (ftp *FTP) Stop() {
 	ftp.stop = make(chan bool)
 	ftp.stop <- true
 }
@@ -168,6 +168,18 @@ func NewFTP(debuglevel int) *FTP {
 	return ftp
 }
 
+//Set ftp dial timeout
+func (ftp *FTP) SetFTPTimeout(timeout time.Duration) error {
+	if ftp == nil {
+		return errors.New("ftp client is nil")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be greater than 0")
+	}
+	ftp.timeoutInMsec = timeout
+	return nil
+}
+
 // Connect connects to the host by using the specified port or the default one if the value is <=0.
 func (ftp *FTP) Connect(host string, port int, socks5ProxyUrl string) (resp *Response, err error) {
 
@@ -178,6 +190,8 @@ func (ftp *FTP) Connect(host string, port int, socks5ProxyUrl string) (resp *Res
 
 	if port <= 0 {
 		port = DefaultFtpPort
+	} else {
+		ftp.Port = port
 	}
 
 	addr := fmt.Sprintf("%s:%d", ftp.Host, ftp.Port)
@@ -251,7 +265,7 @@ func (ftp *FTP) Login(username, password string, acct string) (response *Respons
 		return
 	}
 
-//	if tempResponse.getFirstChar() == "3" {
+	//	if tempResponse.getFirstChar() == "3" {
 	if tempResponse.Code == StatusUserOK {
 		tempResponse, err = ftp.SendAndRead(PASSWORD_FTP_CMD, password)
 		if err != nil {
@@ -264,7 +278,7 @@ func (ftp *FTP) Login(username, password string, acct string) (response *Respons
 			return
 		}
 	}
-//	if tempResponse.getFirstChar() != "2" {
+	//	if tempResponse.getFirstChar() != "2" {
 	if tempResponse.Code != StatusLoggedIn {
 		err = NewErrReply(errors.New(tempResponse.Message))
 		return
@@ -409,7 +423,7 @@ func (ftp *FTP) Cwd(dirname string) (response *Response, err error) {
 // Size retrieves the size of a file.
 func (ftp *FTP) Size(filename string) (size int, err error) {
 	response, err := ftp.SendAndRead(SIZE_FTP_CMD, filename)
-	if err != nil{
+	if err != nil {
 		return
 	}
 	if response.Code == StatusFile {
@@ -457,7 +471,7 @@ func (ftp *FTP) Pwd() (dirname string, err error) {
 // Quits sends a QUIT command and closes the connection.
 func (ftp *FTP) Quit() (response *Response, err error) {
 	response, err = ftp.SendAndRead(QUIT_FTP_CMD)
-	if ftp.conn != nil{
+	if ftp.conn != nil {
 		ftp.conn.Close()
 		ftp.conn = nil
 	}
@@ -618,7 +632,7 @@ func (ftp *FTP) GetBytes(cmd FtpCmd, writer io.Writer, blocksize int, params ...
 				return err1
 			}
 
-			if tmpfile, ok := writer.(*os.File); ok{
+			if tmpfile, ok := writer.(*os.File); ok {
 				tmpfile.Sync()
 			}
 
@@ -642,10 +656,9 @@ func (ftp *FTP) GetBytes(cmd FtpCmd, writer io.Writer, blocksize int, params ...
 	return
 }
 
-
 func (ftp *FTP) DownloadResumeFile(remotename string, localpath string, useLineMode bool) (err error) {
 	// remove local file
-//	os.Remove(localpath)
+	//	os.Remove(localpath)
 	var f *os.File
 	f, err = os.OpenFile(localpath, os.O_WRONLY|os.O_CREATE, 0644)
 	defer f.Close()
@@ -663,12 +676,12 @@ func (ftp *FTP) DownloadResumeFile(remotename string, localpath string, useLineM
 	} else {
 		var stat os.FileInfo
 		stat, err = f.Stat()
-		if err != nil{
+		if err != nil {
 			return
 		}
 
 		offset := stat.Size()
-		if err = ftp.ResumeFile(RETR_FTP_CMD, f,offset, BLOCK_SIZE, remotename); err != nil {
+		if err = ftp.ResumeFile(RETR_FTP_CMD, f, offset, BLOCK_SIZE, remotename); err != nil {
 			return err
 		}
 	}
@@ -676,9 +689,7 @@ func (ftp *FTP) DownloadResumeFile(remotename string, localpath string, useLineM
 	return err
 }
 
-
-
-func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize int, params ...string) (err error) {
+func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File, offset int64, blocksize int, params ...string) (err error) {
 	var conn net.Conn
 	if _, err = ftp.SendAndRead(TYPE_I_FTP_CMD); err != nil {
 		return
@@ -687,15 +698,14 @@ func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize i
 	// wrap this code up to guarantee the connection disposal via a defer
 	separateCall := func() error {
 
-		if offset != 0{
-			if res, err := ftp.SendAndRead(REST_FTP_CMD, fmt.Sprintf("%d", offset)); err != nil{
+		if offset != 0 {
+			if res, err := ftp.SendAndRead(REST_FTP_CMD, fmt.Sprintf("%d", offset)); err != nil {
 				return err
-			}else{
+			} else {
 				fmt.Println(res)
 			}
 
 		}
-
 
 		if conn, _, err = ftp.transferCmd(cmd, params...); err != nil {
 			return err
@@ -710,9 +720,9 @@ func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize i
 		var n int
 
 		for {
-			if ftp.stop != nil{
+			if ftp.stop != nil {
 				select {
-				case <- ftp.stop:
+				case <-ftp.stop:
 					return NewErrStop
 				default:
 					n, err = bufReader.Read(s)
@@ -721,7 +731,7 @@ func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize i
 					if _, err1 := writer.WriteAt(s[:n], offset); err1 != nil {
 						return err1
 					}
-					if err2 := writer.Sync(); err2 != nil{
+					if err2 := writer.Sync(); err2 != nil {
 						return err2
 					}
 
@@ -733,14 +743,14 @@ func (ftp *FTP) ResumeFile(cmd FtpCmd, writer *os.File,offset int64, blocksize i
 						return err
 					}
 				}
-			}else {
+			} else {
 				n, err = bufReader.Read(s)
 				ftp.writeInfo("GETBYTES: Number of bytes read:", n)
 
 				if _, err1 := writer.WriteAt(s[:n], offset); err1 != nil {
 					return err1
 				}
-				if err2 := writer.Sync(); err2 != nil{
+				if err2 := writer.Sync(); err2 != nil {
 					return err2
 				}
 
@@ -918,9 +928,16 @@ func (ftp *FTP) transferCmd(cmd FtpCmd, params ...string) (conn net.Conn, size i
 		}
 
 		addr := fmt.Sprintf("%s:%d", host, port)
-		if conn, err = ftp.dialer.Dial("tcp", addr); err != nil {
-			ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:", ftp.dialer != proxy.Direct)
-			return
+		if ftp.timeoutInMsec > 0 {
+			if conn, err = net.DialTimeout("tcp", addr, ftp.timeoutInMsec); err != nil {
+				ftp.writeInfo("Dial error, address:", addr, "error:", err)
+				return
+			}
+		} else {
+			if conn, err = ftp.dialer.Dial("tcp", addr); err != nil {
+				ftp.writeInfo("Dial error, address:", addr, "error:", err, "proxy enabled:", ftp.dialer != proxy.Direct)
+				return
+			}
 		}
 
 	} else {
